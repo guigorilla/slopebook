@@ -1,0 +1,11 @@
+{
+  "name": "@slopebook/auth",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "^2.11.1",
+    "next-auth": "^4.24.13"
+  }
+}

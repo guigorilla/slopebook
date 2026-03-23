@@ -1,0 +1,7 @@
+{
+  "name": "@slopebook/i18n",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
