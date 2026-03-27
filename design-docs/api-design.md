@@ -115,6 +115,7 @@ POST   /api/v1/waitlist                   Join a waitlist
 DELETE /api/v1/waitlist/:id               Leave a waitlist
 POST   /api/v1/waitlist/:id/accept        Accept a waitlist offer (within 2-hour window)
 PATCH  /api/v1/waitlist/:id/promote       Manually promote waitlisted student (admin)
+POST   /api/v1/bookings/:id/review    Submit tip and rating after lesson completion
 ```
 
 **Booking request payload:**
@@ -124,7 +125,9 @@ PATCH  /api/v1/waitlist/:id/promote       Manually promote waitlisted student (a
   "learnerId": "uuid",
   "instructorId": "uuid",
   "startAt": "2026-12-20T09:00:00Z",
-  "paymentMethodId": "uuid"
+  "paymentMethodId": "uuid",
+  "reservationId": "uuid | null",
+  "sessionToken": "string | null"
 }
 ```
 
