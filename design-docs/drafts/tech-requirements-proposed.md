@@ -3,7 +3,7 @@
 **Document Status:** Draft — Generate Pipeline Run 6
 **Last Updated:** 2026-03-28
 **Author:** Tech-Lead Agent
-**Source:** use-cases-p0.md (Run 6), data-model.md (v0.5), api-design.md
+**Source:** use-cases-p0-proposed.md (Run 6), data-model-proposed.md (v0.4), api-design.md
 **Scope:** P0 (Alpha) use cases only
 
 ---
@@ -13,8 +13,9 @@
 **Use Case:** UC-001
 **Services:** Scheduling & Availability, Catalog & Lesson, Instructor
 **API Changes:**
-- `GET /api/v1/availability?lessonTypeId=&date=&age=&skillLevel=` — add required `age` (integer) and `skillLevel` (enum) params; filters slots to eligible instructors only
+- `GET /api/v1/availability?lessonTypeId=&date=&skillLevel=` — return slots with available instructor list; existing endpoint, add skillLevel filter
 - `GET /api/v1/instructors/:id` — return bioEn/bioFr based on Accept-Language header
+- `GET /api/v1/availability?lessonTypeId=&date=&age=&skillLevel=` — add required `age` (integer) and `skillLevel` (enum) params; filters slots to eligible instructors only
 **Schema Changes:** None
 **Auth:** Public (no JWT required for availability query)
 **Flags:** i18n, multi-tenant
@@ -28,7 +29,7 @@
 **Services:** Booking Engine, Scheduling & Availability
 **API Changes:**
 - `POST /api/v1/slot-reservations` — create SlotReservation; return sessionToken and expiresAt; new endpoint
-**Schema Changes:** None (SlotReservation schema complete in v0.5)
+**Schema Changes:** None (SlotReservation schema complete in v0.4)
 **Auth:** Public (guest path); guest or JWT for authenticated path
 **Flags:** multi-tenant, performance
 **Open Technical Questions:** None
@@ -40,20 +41,20 @@
 **Use Case:** UC-003
 **Services:** Booking Engine, Payment, Account & Identity, Notification
 **API Changes:**
-- `POST /api/v1/guest-checkouts` — create GuestCheckout; required fields: email, firstName, lastName, learnerDateOfBirth, skillLevel, preferredLanguage (defaults to browser geolocation, OQ-057); conditional: parentalConsentGiven (required if age < 18)
-- `POST /api/v1/bookings` — create Booking from GuestCheckout; links guestCheckoutId; idempotency key scoped to reservationId
+- `POST /api/v1/bookings` — `age` and `skillLevel` carried in payload from browse stage; collected at TR-001, not re-prompted at checkout
+- `POST /api/v1/guest-checkouts` — create GuestCheckout; required fields: email, firstName, lastName, learnerDateOfBirth, skillLevel; conditional: parentalConsentGiven (required if age < 18)
+- `POST /api/v1/bookings` — create Booking from GuestCheckout; links guestCheckoutId
 - `POST /api/v1/payments/charge` — called once; payment captured before booking DB write
-- `POST /api/v1/payments/:id/refund` — called if all 3 DB write retries fail; void with 4 retries at 100ms intervals; on all retries exhausted set Payment.status = void_pending (OQ-056)
+- `POST /api/v1/payments/:id/refund` — called if all 3 DB write retries fail (void full amount)
 **Schema Changes:**
 - `GuestCheckout.learnerDateOfBirth date NOT NULL` — required per OQ-032
 - `GuestCheckout.skillLevel enum(beginner, intermediate, advanced)` — required per OQ-032
 - `GuestCheckout.parentalConsentGiven boolean nullable` — required when age < 18 (OQ-032)
 - `GuestCheckout.parentalConsentAt timestamp nullable` — consent timestamp (OQ-032)
-- `GuestCheckout.preferredLanguage enum(en, fr) DEFAULT tenant.defaultLanguage` — OQ-057
-- `Payment.status void_pending` — added for void compensation state (OQ-056)
 **Auth:** Public (no JWT); sessionToken from SlotReservation validates hold
 **Flags:** PCI, i18n, multi-tenant
-**Retry semantics (OQ-053):** Payment captured once; retries are DB-write-only using the existing Payment record. On 3rd DB write failure, void attempted with 4 retries at 100ms intervals; if void fails after all retries, set Payment.status = void_pending and alert ops.
+**Retry semantics (OQ-053):** Payment captured once; retries are DB-write-only using the existing Payment record. Idempotency key on `POST /api/v1/bookings` scoped to reservationId. On 3rd DB write failure, `POST /api/v1/payments/:id/refund` voids the captured payment.
+**Smartwaiver (OQ-052):** Deferred. No API call at booking confirmation. GuestCheckout.waiverToken remains null for P0.
 
 ---
 
@@ -64,11 +65,12 @@
 **API Changes:**
 - `POST /api/v1/bookings` — learnerId required for authenticated path; validates Learner belongs to caller's Household
 - `POST /api/v1/payments/charge` — card-on-file path uses stored PaymentMethod.processorTokenId [PCI: encrypted]
-- `POST /api/v1/payments/:id/refund` — called if all 3 DB write retries fail; same void retry semantics as TR-003
-**Schema Changes:** None beyond TR-003 additions
+- `POST /api/v1/payments/:id/refund` — called if all 3 DB write retries fail
+**Schema Changes:** None beyond TR-003 GuestCheckout additions
 **Auth:** `guest` role minimum; Learner must be in caller's Household
 **Flags:** PCI, i18n, multi-tenant
 **Retry semantics (OQ-053):** Same as TR-003 — DB-write-only retries; payment not re-charged.
+**Smartwaiver (OQ-052):** Deferred. Learner.waiverToken remains null for P0.
 
 ---
 
@@ -77,8 +79,8 @@
 **Use Case:** UC-005
 **Services:** Account & Identity
 **API Changes:**
-- `POST /api/v1/auth/register` — accept additional required fields: dateOfBirth, skillLevel, preferredLanguage (defaults to browser geolocation, OQ-057); atomically create User + Household + self-Learner sub-profile (OQ-048); conditional: parentalConsentGiven (required if age < 18, OQ-032)
-**Schema Changes:** None (Learner.parentalConsentGiven/At active in v0.5)
+- `POST /api/v1/auth/register` — accept additional required fields: dateOfBirth, skillLevel, preferredLanguage; atomically create User + Household + self-Learner sub-profile (OQ-048); conditional: parentalConsentGiven (required if age < 18, OQ-032)
+**Schema Changes:** None (Learner.parentalConsentGiven/At already in v0.4)
 **Auth:** Public (no JWT)
 **Flags:** i18n, multi-tenant
 **Open Technical Questions:** None
@@ -90,12 +92,12 @@
 **Use Case:** UC-006
 **Services:** Booking Engine, Payment
 **API Changes:**
-- `PATCH /api/v1/bookings/:id/cancel` — set status = cancelled; calculate refund from snapshot cancellationPolicyId; trigger `POST /api/v1/payments/:id/refund` if applicable; accepts `instructor` role for own bookings (OQ-058)
+- `PATCH /api/v1/bookings/:id/cancel` — set status = cancelled; calculate refund from snapshot cancellationPolicyId; trigger `POST /api/v1/payments/:id/refund` if applicable
 **Schema Changes:** None
-**Auth:** `guest` (own bookings only), `school_admin` (any booking in tenant), `instructor` (own bookings per OQ-058)
+**Auth:** `guest` (own bookings only), `school_admin` (any booking in tenant)
 **Flags:** multi-tenant
+**Open Technical Questions:** None
 **Note (OQ-033):** Guest-checkout users have no JWT; no self-service cancel endpoint available for guest path. School must cancel on their behalf.
-**Note (OQ-058):** Instructors have admin-level access to their own lessons and can cancel them directly.
 
 ---
 
@@ -105,7 +107,7 @@
 **Services:** Booking Engine
 **API Changes:**
 - `POST /api/v1/bookings/:id/review` — create InstructorRating; validate Booking.status = completed; one rating per booking (unique constraint)
-**Schema Changes:** None (InstructorRating entity in v0.5)
+**Schema Changes:** None (InstructorRating entity in v0.4)
 **Auth:** `guest` role; caller's learnerId must match Booking.learnerId
 **Flags:** multi-tenant
 
@@ -119,7 +121,7 @@
 - `POST /api/v1/instructors/:id/availability` — create availability slot or RRULE recurrence
 - `PATCH /api/v1/instructors/:id/availability/:slotId` — update or override; detect conflict with confirmed bookings
 - `DELETE /api/v1/instructors/:id/availability/:slotId` — remove slot
-**Schema Changes:** None (Availability.recurrence text field in v0.5)
+**Schema Changes:** None (Availability.recurrence text field in v0.4)
 **Auth:** `instructor` (own availability only), `school_admin` (any instructor in tenant)
 **Flags:** multi-tenant
 
@@ -130,7 +132,7 @@
 **Use Case:** UC-009
 **Services:** Booking Engine
 **API Changes:**
-- `GET /api/v1/bookings?instructorId=&from=&to=&status=confirmed` — filter to confirmed bookings for today; in_progress status removed (OQ-055)
+- `GET /api/v1/bookings?instructorId=&from=&to=&status=confirmed,in_progress` — existing endpoint; add date-range filter support
 **Schema Changes:** None
 **Auth:** `instructor` (own bookings only)
 **Flags:** i18n, multi-tenant
@@ -142,12 +144,11 @@
 **Use Case:** UC-010
 **Services:** Booking Engine
 **API Changes:**
-- `PATCH /api/v1/bookings/:id/checkin` — set Booking.checkedInAt = now; status remains confirmed; new endpoint
+- `PATCH /api/v1/bookings/:id/checkin` — set Booking.checkedInAt = now; new endpoint
 **Schema Changes:** None
 **Auth:** `instructor` (own bookings only)
 **Flags:** multi-tenant
-**Note (OQ-052):** Smartwaiver deferred. Check-in sets checkedInAt only.
-**Note (OQ-055):** Booking.status = in_progress removed. checkedInAt field tracks check-in event; status transitions directly from confirmed to completed or no_show.
+**Smartwaiver (OQ-052):** Deferred. Check-in is confirmation only. No waiverToken lookup or Smartwaiver embed in P0. waiverStatus field not populated by this endpoint in P0.
 
 ---
 
@@ -156,7 +157,7 @@
 **Use Case:** UC-011
 **Services:** Booking Engine, Payment
 **API Changes:**
-- `PATCH /api/v1/bookings/:id/no-show` — set status = no_show; apply noShowPolicy from snapshot CancellationPolicy; trigger refund if applicable
+- `PATCH /api/v1/bookings/:id/no-show` — set status = no_show; apply noShowPolicy from snapshot CancellationPolicy; trigger refund if noShowPolicy = partial_refund or full_refund
 **Schema Changes:** None
 **Auth:** `instructor` (own bookings)
 **Flags:** multi-tenant
@@ -181,7 +182,7 @@
 **Use Case:** UC-013
 **Services:** Booking Engine, Notification
 **API Changes:**
-- `PATCH /api/v1/bookings/:id/complete` — set status = completed; emit booking.completed event (to be added to api-design.md Notification Service event list)
+- `PATCH /api/v1/bookings/:id/complete` — set status = completed; emit booking.completed event
 **Schema Changes:** None
 **Auth:** `instructor` (own bookings)
 **Flags:** multi-tenant
@@ -206,7 +207,7 @@
 **Use Case:** UC-015
 **Services:** Booking Engine, Notification
 **API Changes:**
-- `PATCH /api/v1/bookings/:id/reassign` — update instructorId; validate new instructor availability; emit instructor-change notification; new endpoint
+- `PATCH /api/v1/bookings/:id` — update instructorId; validate new instructor availability; emit instructor-change notification
 **Schema Changes:** None
 **Auth:** `school_admin`
 **Flags:** multi-tenant
@@ -220,7 +221,7 @@
 **API Changes:**
 - `POST /api/v1/instructors` — create Instructor + InstructorTenant (onboardingStatus = pending)
 - `PATCH /api/v1/instructors/:id/approve` — set InstructorTenant.onboardingStatus = approved
-- `POST /api/v1/instructors/:id/certifications` — attach Certification with documentUrl; new endpoint
+- Document upload: `POST /api/v1/instructors/:id/certifications` — attach Certification with documentUrl
 **Schema Changes:** None
 **Auth:** `school_admin`
 **Flags:** multi-tenant
@@ -273,7 +274,7 @@
 **Use Case:** UC-020
 **Services:** Instructor
 **API Changes:**
-- `GET /api/v1/instructors` — include certificationStatus computed field (valid/expiring_soon/expired)
+- `GET /api/v1/instructors` — include certificationStatus computed field (valid/expiring_soon/expired) based on Certification.expiresAt
 - `PATCH /api/v1/instructors/:id/certifications/:certId` — update expiresAt, documentUrl, alertSentAt
 **Schema Changes:** None
 **Auth:** `school_admin`
@@ -284,15 +285,12 @@
 ## TR-021 — Admin creates a manual booking
 
 **Use Case:** UC-021
-**Services:** Booking Engine, Account & Identity, Payment
+**Services:** Booking Engine, Payment
 **API Changes:**
-- `POST /api/v1/users` — admin creates a User account for walk-up customer (OQ-054)
-- `POST /api/v1/households/:id/learners` — admin creates a Learner profile for walk-up customer (OQ-054)
-- `POST /api/v1/bookings` — admin path; learnerId required (linked to newly-created or existing Learner)
+- `POST /api/v1/bookings` — admin path accepts learnerId or ad-hoc customer info; same endpoint as customer path
 **Schema Changes:** None
 **Auth:** `school_admin`
 **Flags:** PCI, multi-tenant
-**Note (OQ-054):** Admin creates a full User + Learner record for walk-up customers rather than using GuestCheckout. This gives the customer an account and booking history from their first visit.
 
 ---
 
@@ -311,20 +309,17 @@
 
 ## Gap Analysis
 
-1. `GET /api/v1/bookings/:id/notes` — required by TR-012; absent from api-design.md
+1. `GET /api/v1/bookings/:id/notes` — required by TR-012 but absent from api-design.md
 2. `POST /api/v1/slot-reservations` — required by TR-002; absent from api-design.md
 3. `PATCH /api/v1/bookings/:id/checkin` — required by TR-010; absent from api-design.md
 4. `POST /api/v1/cancellation-policies` and `PATCH /api/v1/cancellation-policies/:id` — required by TR-018; absent from api-design.md
 5. `PATCH /api/v1/cancellation-policies/:id/default` — required by TR-018; absent from api-design.md
 6. `POST /api/v1/bookings/bulk-cancel` — required by TR-019; absent from api-design.md
-7. `POST /api/v1/auth/register` — must accept dateOfBirth, skillLevel, preferredLanguage, parentalConsentGiven; current spec undocumented
-8. Real-time push mechanism for Admin Schedule View (TR-014) — SSE vs WebSocket vs polling decision needed
-9. `PATCH /api/v1/bookings/:id/reassign` — required by TR-015; absent from api-design.md
-10. `POST /api/v1/instructors/:id/certifications` — required by TR-016; absent from api-design.md; file storage strategy not defined
-11. `DELETE /api/v1/households/:id/learners/:learnerId` — 409 LEARNER_HAS_ACTIVE_BOOKINGS error code not documented
-12. `booking.completed` notification event — required by TR-013; absent from api-design.md Notification Service event list
-13. `PATCH /api/v1/bookings/:id/complete` — required by TR-013; absent from api-design.md
-14. `PATCH /api/v1/bookings/:id/no-show` — required by TR-011; absent from api-design.md
+7. `POST /api/v1/auth/register` — must accept dateOfBirth, skillLevel, parentalConsentGiven; current spec has none of these fields documented
+8. Real-time push mechanism for Admin Schedule View (TR-014) — not specified; SSE vs WebSocket vs polling decision needed
+9. `PATCH /api/v1/bookings/:id` (instructor reassignment, TR-015) — not documented in api-design.md; only per-field PATCH endpoints are implied
+10. Certification upload endpoint `POST /api/v1/instructors/:id/certifications` — absent from api-design.md; file storage strategy not defined
+11. `DELETE /api/v1/households/:id/learners/:learnerId` — must return 409 LEARNER_HAS_ACTIVE_BOOKINGS; error code not documented in api-design.md
 
 ---
 
@@ -336,11 +331,9 @@
 | `GuestCheckout.skillLevel` | enum(beginner, intermediate, advanced) | Additive | TR-003 |
 | `GuestCheckout.parentalConsentGiven` | boolean, nullable | Additive | TR-003 |
 | `GuestCheckout.parentalConsentAt` | timestamp, nullable | Additive | TR-003 |
-| `GuestCheckout.preferredLanguage` | enum(en, fr), DEFAULT based on tenant | Additive | TR-003, OQ-057 |
 | `Learner.parentalConsentGiven` | boolean, nullable (active) | Additive | TR-005 |
 | `Learner.parentalConsentAt` | timestamp, nullable (active) | Additive | TR-005 |
 | `Payment.groupSessionId` | REMOVED | Destructive | OQ-031 |
-| `Payment.status void_pending` | enum value added | Additive | TR-003, OQ-056 |
-| `PaymentMethod.processorTokenId` | string, encrypted [PCI] | Annotation change | TR-004 |
-| `WaitlistEntry.position` | integer, nullable | Additive | P1 |
-| `Booking.status in_progress` | REMOVED from enum | Destructive | OQ-055 |
+| `PaymentMethod.processorTokenId` | string, encrypted [PCI] | Destructive (annotation change) | TR-004 |
+| `WaitlistEntry.position` | integer, nullable | Additive | P1 TR-027 |
+| `GuestCheckout.waiverToken` | string, nullable (deferred, null in P0) | Additive | OQ-052 |
