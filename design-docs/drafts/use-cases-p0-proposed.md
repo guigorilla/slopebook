@@ -1,7 +1,7 @@
 # Slopebook — Use Cases (P0)
 
-**Document Status:** Draft — Generate Pipeline Run 7
-**Last Updated:** 2026-03-29
+**Document Status:** Draft — Generate Pipeline Run 8
+**Last Updated:** 2026-04-04
 **Author:** Product-Lead Agent
 **Scope:** P0 (Alpha — Q2 2026) use cases only
 
@@ -25,7 +25,7 @@
 6. Guest proceeds to booking summary.
 
 **Alternate Flows:**
-- No availability on selected date → guest sees empty state with option to join waitlist (P1).
+- No availability on selected date → guest sees empty state with option to join waitlist.
 - Guest prefers specific instructor → filters grid before selecting date.
 
 **Postconditions:**
@@ -185,28 +185,35 @@
 
 ---
 
-## UC-007 — Rate an instructor after a lesson
+## UC-007 — Submit post-lesson rating and optional tip
 
 **Persona:** Guest (signed-in)
-**Goal:** Submit a rating and optional comment after a completed lesson.
+**Goal:** Submit a rating (required) and optional tip payment after a completed lesson.
 **Preconditions:**
-- Booking.status = completed.
+- Booking.status = completed (set by instructor per UC-013 or auto-completed at +2 hours per decisions.md 2026-03-29).
 - No existing InstructorRating for this booking.
 - User is authenticated.
 
 **Main Flow:**
-1. User sees rating prompt in account dashboard for completed lesson.
-2. User selects 1–5 star rating and optionally adds a comment.
+1. User sees rating prompt in account dashboard for a completed lesson (or clicks link in post-lesson email).
+2. User selects 1–5 star rating and optionally adds a written comment.
 3. System creates InstructorRating record (tenantId, bookingId, instructorId, rating, comment).
+4. User is optionally prompted to add a tip (separate payment transaction, not part of original booking charge).
+5. If tip submitted: system creates a new Payment record linked to bookingId; charge is captured via processor.
+6. Confirmation of rating (and tip, if submitted) shown.
 
 **Alternate Flows:**
-- User dismisses prompt → no rating created; prompt removed.
+- User dismisses prompt → no rating created; prompt removed from dashboard.
+- Post-lesson email link → user clicks link in confirmation/completion email; arrives at review page for that specific booking; authenticated before proceeding.
+- Tip declined → rating saved without tip; no payment created.
 
 **Postconditions:**
 - One InstructorRating per Booking (unique constraint enforced).
+- Tip Payment record created if tip was submitted.
 
 **Priority:** P0
 **Note (OQ-028):** Ratings are internal-only within tenant; no public-facing display.
+**Note (OQ-043 conflict):** OQ-043 (2026-03-27) resolved "No tips" and removed `Payment.tipAmountCents` and `Tenant.tipsEnabled`. However, decisions.md (2026-03-26 and 2026-03-29) explicitly includes tips as an optional separate post-lesson payment transaction. This conflict must be resolved by the human before implementation. For this pipeline run, the decisions.md definition is followed (tips included as optional). If OQ-043 intent is "no tips at all," the uc-registry item `[ ] Student submits tip after lesson is marked complete (optional)` should be marked `[>] DEFERRED` and this UC updated to remove step 4–5.
 
 ---
 
@@ -333,23 +340,29 @@
 
 ---
 
-## UC-013 — Instructor marks lesson complete
+## UC-013 — Instructor marks lesson complete (and auto-completion)
 
-**Persona:** Instructor
-**Goal:** Close out a lesson after it has concluded.
+**Persona:** Instructor / System
+**Goal:** Close out a lesson after it has concluded; unlock post-lesson flow for student.
 **Preconditions:**
-- Booking.status = confirmed; lesson end time has passed.
+- Booking.status = confirmed; lesson end time has passed (or is within 2 hours of passing for auto-completion).
 
 **Main Flow:**
 1. Instructor taps Complete on a booking card.
-2. System sets Booking.status = completed.
-3. System queues post-lesson review email to student (booking.completed event).
+2. System sets Booking.status = completed; Booking.checkedInAt already set from UC-010.
+3. System fires booking.completed event → triggers post-lesson review email to student (UC-007 email link path).
+4. booking.completed event also triggers earnings calculation for the instructor.
+
+**Alternate Flows:**
+- Auto-completion: If instructor has not manually marked the lesson complete within 2 hours after scheduled end time, system auto-sets Booking.status = completed (decisions.md 2026-03-29). Same booking.completed event fires; same downstream effects apply.
+- Instructor marks complete before lesson end time → system accepts; booking transitions immediately.
 
 **Postconditions:**
-- Booking.status = completed; student can now submit a rating (UC-007).
+- Booking.status = completed; student can now submit rating (UC-007); post-lesson email queued.
+- Earnings calculation triggered for instructor.
 
 **Priority:** P0
-**Note (OQ-055):** Transition is confirmed → completed directly. in_progress status is not used.
+**Note (OQ-055):** Status transition is confirmed → completed directly. in_progress is not used.
 
 ---
 
@@ -541,7 +554,7 @@
 - Walk-up customer now has a full account and booking history from first visit.
 
 **Priority:** P0
-**Note (OQ-054):** Admin creates a full User + Learner record for walk-up customers rather than using GuestCheckout. Walk-up customers get full accounts.
+**Note (OQ-054):** Admin creates a full User + Learner record for walk-up customers rather than using GuestCheckout.
 
 ---
 
@@ -569,6 +582,6 @@
 ## UX Flows Missing Steps
 
 - `ux-flows.md §3 Instructor App` — "Sync with Google Calendar (optional)" listed under Availability Management; deferred to v1.5 (OQ-021); no UC defined for P0 or P1
-- `ux-flows.md §3 Instructor App` — "Tips (if applicable)" listed in Earnings Dashboard; removed from all plans (OQ-043); no UC
+- `ux-flows.md §3 Instructor App` — "Tips (if applicable)" listed in Earnings Dashboard; conflict between OQ-043 (no tips) and decisions.md (optional post-lesson tip); UC-007 step 4–5 addresses this but schema support is unresolved — see UC-007 Open Questions note
 - `ux-flows.md §5 Operator Portal` — "Pricing floors and seasonal rate cards" listed; removed from v1.0 scope (OQ-042)
 - `ux-flows.md §1 Customer` — "Select learner (if household account)" step has no P0 screen for adding a new learner mid-checkout; deferred to P1 household management (UC-023)

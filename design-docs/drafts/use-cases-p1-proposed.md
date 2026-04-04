@@ -1,7 +1,7 @@
 # Slopebook — Use Cases (P1 / P2)
 
-**Document Status:** Draft — Generate Pipeline Run 7
-**Last Updated:** 2026-03-29
+**Document Status:** Draft — Generate Pipeline Run 8
+**Last Updated:** 2026-04-04
 **Author:** Product-Lead Agent
 **Scope:** P1 (Beta — Q3 2026) and P2 (v1.0 GA — Q4 2026) use cases only
 

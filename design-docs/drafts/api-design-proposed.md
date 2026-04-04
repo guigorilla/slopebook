@@ -1,433 +1,379 @@
-# Slopebook — API Design Amendments
+# Slopebook — API Design
 
-**Document Status:** Draft
-**Last Updated:** 2026-03-25
-**Author:** Resolution pass (blocker remediation)
-**Version:** 0.1 — addendum to `design-docs/api-design.md`
+## Principles
 
-This document defines API endpoint groups that are entirely absent from `design-docs/api-design.md` but are required by blockers and HIGH-severity critique issues. It does not replace `api-design.md`; it supplements it. Each section references the critique ID that motivates it and the corresponding entity in `data-model-proposed.md`.
+- All applications (customer, admin, instructor, operator) consume the same API layer — no app has direct database access
+- The API gateway handles authentication, authorization, tenant resolution, versioning, and rate limiting
+- Service boundaries are explicit — each domain service owns its data and exposes it only through defined endpoints
+- All endpoints are versioned under `/api/v1/`
+- All responses are JSON
+- Authentication is via Bearer token (JWT) in the Authorization header
+- Tenant is resolved from the JWT claims — never passed as a query parameter
+- Unauthenticated (public) endpoints are explicitly marked `[PUBLIC]`; all others require a valid JWT
 
----
-
-## 1. Slot Reservation Endpoints
-
-**Motivating issue:** CRT-H-001 (BLOCKER) — soft-hold mechanism has no API surface.
-**Corresponding entity:** `SlotReservation` (`data-model-proposed.md`)
-**Service owner:** Booking Service
+## Services & Endpoints
 
 ---
 
-### POST /api/v1/slot-reservations
+### Account & Identity Service
 
-Create a soft hold on an instructor time slot for the duration of checkout. Called when the guest confirms a slot selection (UC-003 step 5).
+Owns users, households, learner sub-profiles, roles, and tenant scoping.
 
-**Auth:** Required (authenticated user or anonymous session token for guest checkout).
+```
+POST   /api/v1/auth/register              Create user account; atomically creates User + Household + self-Learner  [PUBLIC]
+       Required: email, password, dateOfBirth, skillLevel, preferredLanguage
+       Conditional: parentalConsentGiven required if age < 18 (OQ-032)
+POST   /api/v1/auth/login                 Authenticate and return JWT  [PUBLIC]
+POST   /api/v1/auth/logout                Invalidate session
+POST   /api/v1/auth/refresh               Refresh JWT
+POST   /api/v1/auth/forgot-password       Send password-reset email to registered address  [PUBLIC]
+POST   /api/v1/auth/reset-password        Consume reset token and set new password  [PUBLIC]
 
-**Request body:**
+GET    /api/v1/me                         Get current user profile
+PATCH  /api/v1/me                         Update current user profile (includes preferredLanguage)
+
+POST   /api/v1/users                      Admin creates User account for walk-up customer (school_admin)
+                                          Atomically creates User + Household + Learner sub-profile
+
+GET    /api/v1/households/:id             Get household with learner sub-profiles
+POST   /api/v1/households                 Create a household
+PATCH  /api/v1/households/:id             Update household
+
+GET    /api/v1/households/:id/learners    List learners in a household
+POST   /api/v1/households/:id/learners    Add a learner sub-profile
+PATCH  /api/v1/households/:id/learners/:learnerId   Update a learner
+DELETE /api/v1/households/:id/learners/:learnerId   Remove a learner
+       409 LEARNER_HAS_ACTIVE_BOOKINGS returned when learner has confirmed bookings (OQ-036)
+
+GET    /api/v1/payment-methods            List stored cards for current household
+POST   /api/v1/payment-methods            Add a card-on-file (via processor token)  [PCI]
+DELETE /api/v1/payment-methods/:id        Remove a stored card
+PATCH  /api/v1/payment-methods/:id/default  Set as default payment method
+```
+
+**POST /api/v1/auth/register payload:**
 ```json
 {
-  "tenantId": "uuid",
-  "instructorId": "uuid",
-  "lessonTypeId": "uuid",
-  "startAt": "ISO 8601 timestamp",
-  "endAt": "ISO 8601 timestamp",
-  "sessionToken": "string"
+  "email": "string",
+  "password": "string",
+  "dateOfBirth": "YYYY-MM-DD",
+  "skillLevel": "beginner | intermediate | advanced",
+  "preferredLanguage": "en | fr",
+  "parentalConsentGiven": "boolean | null"
 }
 ```
 
-**Response 201 Created:**
+---
+
+### Instructor Service
+
+Owns coach profiles, certifications, onboarding state, and Workday handoff.
+
+```
+GET    /api/v1/instructors                List instructors for tenant (public, paginated)  [PUBLIC]
+       ?skillLevel=&lessonTypeId=         Includes certificationStatus computed field
+GET    /api/v1/instructors/:id            Get instructor profile (public)  [PUBLIC]
+POST   /api/v1/instructors                Create instructor profile (school_admin)
+PATCH  /api/v1/instructors/:id            Update instructor profile
+PATCH  /api/v1/instructors/:id/approve    Approve instructor onboarding (school_admin)
+POST   /api/v1/instructors/:id/workday-handoff  Trigger Workday payroll handoff (school_admin)
+
+GET    /api/v1/instructors/:id/earnings   Get earnings summary (instructor own record only)
+
+GET    /api/v1/instructors/:id/certifications          List certifications
+POST   /api/v1/instructors/:id/certifications          Add certification with documentUrl (school_admin)
+PATCH  /api/v1/instructors/:id/certifications/:certId  Update expiresAt, documentUrl, alertSentAt
+```
+
+---
+
+### Catalog & Lesson Service
+
+Owns lesson types, pricing, instructor requirements, and cancellation policies.
+
+```
+GET    /api/v1/lesson-types               List active lesson types for tenant
+GET    /api/v1/lesson-types/:id           Get lesson type detail
+POST   /api/v1/lesson-types               Create lesson type (school_admin)
+PATCH  /api/v1/lesson-types/:id           Update lesson type (school_admin)
+DELETE /api/v1/lesson-types/:id           Deactivate lesson type (school_admin)
+
+GET    /api/v1/cancellation-policies      List cancellation policies for tenant
+POST   /api/v1/cancellation-policies      Create cancellation policy (school_admin)
+PATCH  /api/v1/cancellation-policies/:id           Update cancellation policy (school_admin)
+PATCH  /api/v1/cancellation-policies/:id/default   Set as default; clears previous default (school_admin)
+```
+
+---
+
+### Scheduling & Availability Service
+
+Owns availability slots and open schedule templates. Provides inputs to the Booking Engine — does not create bookings itself.
+
+```
+GET    /api/v1/availability               Query available slots (booking widget)  [PUBLIC]
+       ?lessonTypeId=&date=&age=&skillLevel=
+
+GET    /api/v1/instructors/:id/availability         Get instructor's availability
+POST   /api/v1/instructors/:id/availability         Create availability slot or RRULE recurrence
+PATCH  /api/v1/instructors/:id/availability/:slotId Update or override a slot
+DELETE /api/v1/instructors/:id/availability/:slotId Remove a slot
+
+GET    /api/v1/schedule                   Admin view of all instructor schedules
+       ?date=&instructorId=               Filter parameters
+```
+
+---
+
+### Booking Engine
+
+The authoritative service for all reservations. All booking requests — from customer app, admin dashboard, or walk-up POS — go through this service.
+
+```
+POST   /api/v1/slot-reservations          Create soft-hold SlotReservation; returns sessionToken + expiresAt  [PUBLIC]
+POST   /api/v1/guest-checkouts            Create GuestCheckout record  [PUBLIC]
+       Required: email, firstName, lastName, learnerDateOfBirth, skillLevel, preferredLanguage
+       Conditional: parentalConsentGiven required if age < 18
+
+POST   /api/v1/bookings                   Create a booking (triggers payment)
+GET    /api/v1/bookings/:id               Get booking detail
+PATCH  /api/v1/bookings/:id/cancel        Cancel a booking (triggers refund if applicable)
+PATCH  /api/v1/bookings/:id/complete      Mark booking as completed (instructor)
+PATCH  /api/v1/bookings/:id/no-show       Mark student as no-show (instructor)
+PATCH  /api/v1/bookings/:id/checkin       Check in student; sets checkedInAt; status stays confirmed (instructor)
+PATCH  /api/v1/bookings/:id/reassign      Reassign booking to different instructor (school_admin)
+
+GET    /api/v1/bookings                   List bookings (scoped by role)
+       ?learnerId=&instructorId=&status=&from=&to=
+
+POST   /api/v1/bookings/bulk-cancel       Bulk-cancel by filter; returns count + total refund (school_admin)
+       Payload: { "date": "YYYY-MM-DD", "instructorId": "uuid | null", "lessonTypeId": "uuid | null" }
+
+POST   /api/v1/bookings/:id/notes         Add session notes (instructor, school_admin)
+GET    /api/v1/bookings/:id/notes         List session notes for booking
+
+POST   /api/v1/bookings/:id/review        Submit rating after lesson completion
+POST   /api/v1/bookings/:id/tip           [PCI] Submit optional tip; requires Booking.status = completed;
+                                          window: 48 hours after Booking.endAt; one tip per booking enforced
+                                          by unique partial index; Idempotency-Key header required
+
+GET    /api/v1/waitlist                   List waitlist entries (school_admin)
+POST   /api/v1/waitlist                   Join a waitlist  [PUBLIC or authenticated]
+DELETE /api/v1/waitlist/:id               Leave a waitlist
+POST   /api/v1/waitlist/:id/accept        Accept a waitlist offer (within acceptance window)
+PATCH  /api/v1/waitlist/:id/promote       Manually promote waitlisted student (school_admin)
+```
+
+**Booking request payload:**
 ```json
 {
-  "id": "uuid",
-  "expiresAt": "ISO 8601 timestamp",
+  "lessonTypeId": "uuid",
+  "learnerId": "uuid | null",
+  "instructorId": "uuid",
+  "startAt": "2026-12-20T09:00:00Z",
+  "paymentMethodId": "uuid | null",
+  "guestCheckoutId": "uuid | null",
+  "reservationId": "uuid | null",
+  "sessionToken": "string | null"
+}
+```
+Server-side: exactly one of `learnerId` / `guestCheckoutId` must be non-null. `paymentMethodId` is null for guest checkout (payment captured via processor SDK).
+
+**Booking response includes:**
+- Confirmed booking record
+- Payment capture confirmation
+- Instructor details
+- Calendar .ics attachment URL
+- Confirmation email/SMS trigger
+
+**SlotReservation request payload:**
+```json
+{
+  "instructorId": "uuid",
+  "lessonTypeId": "uuid",
+  "startAt": "2026-12-20T09:00:00Z",
+  "endAt": "2026-12-20T10:00:00Z"
+}
+```
+
+**SlotReservation response:**
+```json
+{
+  "reservationId": "uuid",
+  "sessionToken": "string",
+  "expiresAt": "2026-12-20T09:15:00Z",
   "status": "active"
 }
 ```
 
-**Response 409 Conflict:** Returned when an active `SlotReservation` already exists for the requested `(instructorId, startAt, endAt)` window or the slot has a confirmed booking. Body: `{ "error": "slot_unavailable" }`.
-
-**Notes:**
-- The `id` (reservation ID) MUST be included in the subsequent `POST /api/v1/bookings` request as `reservationId`. The booking engine validates it before committing.
-- TTL is enforced server-side (TR-F-002, TR-NF-018): no less than 10 minutes, no more than 30 minutes, configurable per OQ-011.
-- A Redis key expiring at `expiresAt` is the recommended TTL enforcement mechanism in addition to the database record.
-
----
-
-### DELETE /api/v1/slot-reservations/:id
-
-Release a soft hold explicitly (guest abandons checkout or navigates away).
-
-**Auth:** Required. The caller must be the owner of the session token associated with the reservation, or a platform admin.
-
-**Path param:** `id` — `SlotReservation.id`
-
-**Response 204 No Content:** Reservation released.
-
-**Response 404 Not Found:** Reservation does not exist or is already expired/released.
-
-**Notes:**
-- Sets `SlotReservation.status = released`.
-- The booking engine also calls this endpoint internally on booking confirmation (slot status transitions to `converted`).
-
----
-
-## 2. Cancellation Policy Endpoints
-
-**Motivating issue:** CRT-H-002 (BLOCKER) — `CancellationPolicy` entity has no API surface.
-**Corresponding entity:** `CancellationPolicy` (`data-model-proposed.md`)
-**Service owner:** Admin Service / Operator Service
-
----
-
-### GET /api/v1/admin/cancellation-policies
-
-List all cancellation policies for the authenticated admin's tenant.
-
-**Auth:** Required. Role: `school_admin`, `operator`.
-
-**Response 200 OK:**
+**Review request payload:**
 ```json
 {
-  "data": [
-    {
-      "id": "uuid",
-      "tenantId": "uuid",
-      "name": "string",
-      "isDefault": true,
-      "refundRules": [
-        { "hoursBeforeLesson": 48, "refundPercent": 100 },
-        { "hoursBeforeLesson": 24, "refundPercent": 50 },
-        { "hoursBeforeLesson": 0,  "refundPercent": 0 }
-      ],
-      "noShowPolicy": "no_refund",
-      "createdAt": "ISO 8601 timestamp",
-      "updatedAt": "ISO 8601 timestamp"
-    }
-  ]
+  "rating": 5,
+  "comment": "string | null"
 }
 ```
 
----
-
-### POST /api/v1/admin/cancellation-policies
-
-Create a new cancellation policy for the tenant.
-
-**Auth:** Required. Role: `school_admin`, `operator`.
-
-**Request body:**
+**Tip request payload:**
 ```json
 {
-  "name": "string",
-  "isDefault": false,
-  "refundRules": [
-    { "hoursBeforeLesson": 48, "refundPercent": 100 },
-    { "hoursBeforeLesson": 24, "refundPercent": 50 },
-    { "hoursBeforeLesson": 0,  "refundPercent": 0 }
-  ],
-  "noShowPolicy": "no_refund | partial | full"
+  "amountCents": 1000,
+  "currency": "USD | CAD",
+  "paymentMethodId": "uuid"
+}
+```
+Server-side enforcement: `Booking.status` must be `completed`; request must arrive within 48 hours of `Booking.endAt`; `Idempotency-Key` header required; unique partial index on `Payment(bookingId, paymentType) WHERE paymentType = 'tip'` prevents duplicate tip charges at the database layer.
+
+**Reassign request payload:**
+```json
+{
+  "instructorId": "uuid",
+  "reason": "string | null"
+}
+```
+**Reassign response:** Updated Booking record with new `instructorId`. Previous `instructorId` and `reason` captured in AuditLog entry.
+
+---
+
+### Payment Service
+
+Abstracts Stripe and Shift4 behind a common interface. Never called directly by client apps — only invoked by the Booking Engine and admin refund workflows.
+
+```
+POST   /api/v1/payments/charge            Create and capture a charge (internal)  [PCI]
+POST   /api/v1/payments/:id/refund        Issue a full or partial refund
+GET    /api/v1/payments/:id               Get payment detail
+GET    /api/v1/payments                   List payments (school_admin/operator)
+       ?from=&to=&status=
+
+POST   /api/v1/webhooks/stripe            Stripe webhook receiver  [PUBLIC]
+POST   /api/v1/webhooks/shift4            Shift4 webhook receiver  [PUBLIC]
+```
+
+**Payment schema notes (decisions.md 2026-03-29 and 2026-04-04):**
+- `Payment.bookingId` is nullable. At least one of `bookingId` or `lessonPackageId` must be non-null.
+- `Payment.lessonPackageId` (FK, nullable) added for P1 package purchase payments.
+- `Payment.paymentType` enum(`booking_charge`, `tip`, `package_purchase`) DEFAULT `booking_charge` discriminates payment kinds.
+- Unique partial index on `Payment(bookingId, paymentType) WHERE paymentType = 'tip'` enforces one tip per booking.
+- Application layer enforces mutual exclusivity: a payment links to booking OR package, never both.
+
+---
+
+### Notification Service
+
+Triggered by events from other services — not called directly by client apps.
+
+```
+Internal events consumed:
+  booking.confirmed       → send confirmation email + SMS + .ics attachment
+  booking.cancelled       → send cancellation notice + refund confirmation
+  booking.completed       → send post-lesson email with one-click link for rating (required) and tip (optional)
+  waitlist.slot_available → send waitlist notification (acceptance window opens)
+  booking.reminder        → send 24-hour reminder (scheduled job)
+  lesson.weather_cancel   → send bulk cancellation notice + rebooking link
+  instructor.cert_expiry  → send certification expiry alert to school_admin
+```
+
+---
+
+### Reporting Service
+
+Produces operational and financial reports. Accessible to school_admin and operator roles.
+
+```
+GET    /api/v1/reports/revenue            Revenue summary by period
+       ?from=&to=&groupBy=day|week|month
+
+GET    /api/v1/reports/utilization        Instructor utilization rate
+       ?from=&to=&instructorId=
+
+GET    /api/v1/reports/students           Student analytics (repeat rate, avg spend)
+
+GET    /api/v1/reports/export             Export any report to CSV
+       ?type=revenue|utilization|students&from=&to=
+```
+
+---
+
+## Authentication & Authorization
+
+| Role | Access |
+|------|--------|
+| `[PUBLIC]` | Unauthenticated; availability queries, slot reservations, guest checkout, processor webhooks, auth/register, auth/login, password reset |
+| `guest` | Own household, learners, bookings, payment methods; post-lesson review and tip submission |
+| `instructor` | Own profile, availability, assigned bookings, earnings, session notes (read/write); check-in; complete; no-show; cancel own lessons |
+| `school_admin` | All tenant data — instructors, bookings, schedule, reports, cancellation policies, certification management |
+| `operator` | All tenant data across multiple schools, white-label config, processor config |
+| `platform_admin` | All tenants — internal use only |
+
+JWT claims include: `userId`, `tenantId`, `role`
+
+Tenant is always resolved from the JWT — it is never accepted as a client-supplied parameter.
+
+## Error Format
+
+```json
+{
+  "error": {
+    "code": "BOOKING_CONFLICT",
+    "message": "The requested instructor is not available at this time.",
+    "details": {}
+  }
 }
 ```
 
-**Response 201 Created:** Full policy object.
+**Defined error codes:**
+- `BOOKING_CONFLICT` — instructor not available at requested time
+- `HOLD_EXPIRED` — SlotReservation TTL (15 min) exceeded before booking confirmed
+- `PAYMENT_FAILED` — processor declined charge
+- `PAYMENT_VOID_FAILED` — all void retries exhausted; Payment.status = void_pending (OQ-056)
+- `AGE_TOO_YOUNG` — learner age < 5 at time of booking
+- `LEARNER_HAS_ACTIVE_BOOKINGS` — DELETE on learner blocked; confirmed bookings exist (OQ-036)
+- `WAITLIST_WINDOW_EXPIRED` — acceptance window closed
+- `RATING_ALREADY_SUBMITTED` — InstructorRating already exists for this booking
+- `TIP_ALREADY_SUBMITTED` — tip Payment already exists for this booking
+- `TIP_WINDOW_EXPIRED` — 48-hour tip acceptance window has closed
+- `BOOKING_NOT_COMPLETED` — tip or review submitted against a booking not in completed status
 
-**Notes:**
-- If `isDefault: true`, the previous default policy for the tenant is automatically set to `isDefault: false` (enforced by the partial UNIQUE constraint described in `data-model-proposed.md`).
-- Every new tenant is seeded with a platform default `CancellationPolicy` at onboarding time (addresses OQ-014: no policy gap window). The platform default is: full refund > 48 hours; 50% refund 24–48 hours; no refund < 24 hours; no-show = no refund.
+## Non-Functional
 
----
-
-### GET /api/v1/admin/cancellation-policies/:id
-
-Fetch a single policy by ID.
-
-**Auth:** Required. Role: `school_admin`, `operator`. Tenant-scoped.
-
-**Response 200 OK:** Full policy object.
-
----
-
-### PATCH /api/v1/admin/cancellation-policies/:id
-
-Update an existing policy. All fields are optional; unset fields are unchanged.
-
-**Auth:** Required. Role: `school_admin`, `operator`.
-
-**Request body:** Same shape as POST, all fields optional.
-
-**Response 200 OK:** Updated policy object.
-
-**Notes:**
-- Changing a policy does NOT retroactively alter `Booking.cancellationPolicyId` on existing bookings (those carry a snapshot FK at booking time per `data-model-proposed.md`).
+- Rate limiting applied at the API gateway per tenant and per IP
+- All endpoints require TLS 1.3
+- Responses include `X-Request-ID` header for tracing
+- Idempotency keys supported on `POST /api/v1/bookings`, `POST /api/v1/payments/charge`, and `POST /api/v1/bookings/:id/tip`
 
 ---
 
-### DELETE /api/v1/admin/cancellation-policies/:id
-
-Delete a policy. Blocked if any active booking references this policy via `Booking.cancellationPolicyId`.
-
-**Auth:** Required. Role: `school_admin`, `operator`.
-
-**Response 204 No Content.**
-
-**Response 409 Conflict:** `{ "error": "policy_in_use", "activeBookingCount": N }`
-
----
-
-## 3. Booking Endpoint Amendments
-
-**Motivating issues:** CRT-H-003 (BLOCKER — guest checkout FK chain), CRT-H-008 (HIGH — missing assignment/reassignment/bulk-cancel endpoints).
-**Service owner:** Booking Service / Admin Service
-
----
-
-### POST /api/v1/bookings — guest checkout payload amendment
-
-The existing `POST /api/v1/bookings` request payload must accept two mutually exclusive learner identification modes. This is an amendment to the existing endpoint, not a new endpoint.
-
-**Amended request body (authenticated booking — existing behaviour):**
-```json
-{
-  "reservationId": "uuid",
-  "lessonTypeId": "uuid",
-  "startAt": "ISO 8601 timestamp",
-  "endAt": "ISO 8601 timestamp",
-  "learnerId": "uuid",
-  "skillLevelAtBooking": "beginner | intermediate | advanced"
-}
-```
-
-**Amended request body (guest checkout — new behaviour, CRT-H-003):**
-```json
-{
-  "reservationId": "uuid",
-  "lessonTypeId": "uuid",
-  "startAt": "ISO 8601 timestamp",
-  "endAt": "ISO 8601 timestamp",
-  "guest": {
-    "firstName": "string",
-    "lastName": "string",
-    "email": "string",
-    "phone": "string (optional)"
-  },
-  "skillLevelAtBooking": "beginner | intermediate | advanced"
-}
-```
-
-**Validation:** The booking engine MUST reject requests that provide both `learnerId` and `guest`, and MUST reject requests that provide neither. When `guest` is provided, a `GuestCheckout` record is created and `Booking.guestCheckoutId` is set; `Booking.learnerId` is null.
-
----
-
-### PATCH /api/v1/bookings/:id/assign
-
-Assign an instructor to an unassigned or admin-reassigned booking.
-
-**Auth:** Required. Role: `school_admin`.
-
-**Motivating issue:** CRT-H-008 / GAP-006, UC-022.
-
-**Request body:**
-```json
-{ "instructorId": "uuid" }
-```
-
-**Response 200 OK:** Updated booking object.
-
-**Response 409 Conflict:** Instructor has an overlapping confirmed booking or active slot reservation.
-
----
-
-### PATCH /api/v1/bookings/:id/reassign
-
-Reassign a booking from one instructor to another.
-
-**Auth:** Required. Role: `school_admin`.
-
-**Motivating issue:** CRT-H-008 / GAP-008, UC-025.
-
-**Request body:**
-```json
-{
-  "newInstructorId": "uuid",
-  "reason": "string (optional)"
-}
-```
-
-**Response 200 OK:** Updated booking object.
-
-**Notes:** The `reason` is written to a system `BookingNote` (`authorRole: admin`, `isSharedWithGuest: false`) on the booking for audit purposes.
-
----
-
-### POST /api/v1/bookings/bulk-cancel
-
-Cancel multiple bookings at once (e.g., weather closure).
-
-**Auth:** Required. Role: `school_admin`.
-
-**Motivating issue:** CRT-H-008 / GAP-007, UC-024.
-
-**Request body:**
-```json
-{
-  "date": "YYYY-MM-DD",
-  "lessonTypeIds": ["uuid"],
-  "reason": "string",
-  "notifyGuests": true
-}
-```
-
-**Response 200 OK:**
-```json
-{
-  "cancelledCount": 12,
-  "notificationQueuedCount": 12
-}
-```
-
-**Notes:**
-- All matched bookings in `confirmed` or `in_progress` status on the given date are transitioned to `cancelled`.
-- If `notifyGuests: true`, a NOTIF-005 (cancellation) notification is queued for each affected booking.
-- Refunds are applied according to each booking's `Booking.cancellationPolicyId` snapshot (no-refund window check is skipped for weather cancellations — a full refund is issued regardless, per standard policy for operator-initiated cancellations).
-
----
-
-## 4. Operator Payment Processor Endpoints
-
-**Motivating issues:** CRT-H-008 / GAP-014 (processor test transaction), CRT-H-007 (processor switch card invalidation safeguard).
-**Service owner:** Operator Service
-
----
-
-### POST /api/v1/operator/payment-processor/test
-
-Run a test transaction against the currently configured payment processor for the tenant.
-
-**Auth:** Required. Role: `operator`.
-
-**Request body:** Empty (uses the tenant's stored `paymentCredentials`).
-
-**Response 200 OK:**
-```json
-{
-  "success": true,
-  "processorResponse": "string",
-  "testedAt": "ISO 8601 timestamp"
-}
-```
-
-**Response 422 Unprocessable Entity:** `{ "success": false, "error": "string" }` — credentials are invalid or the processor returned an error.
-
----
-
-### PATCH /api/v1/operator/payment-processor
-
-Update the tenant's payment processor configuration. Includes a mandatory acknowledgment gate for stored-card invalidation.
-
-**Auth:** Required. Role: `operator`.
-
-**Motivating issue:** CRT-H-007 — processor switch must warn about stored card invalidation.
-
-**Request body:**
-```json
-{
-  "paymentProcessor": "stripe | shift4",
-  "paymentCredentials": { "...processor-specific fields..." },
-  "acknowledgeStoredCardsWillBeInvalidated": true
-}
-```
-
-**Validation:** If any `PaymentMethod` records exist for this tenant with `isValid = true`, the request MUST be rejected unless `acknowledgeStoredCardsWillBeInvalidated: true` is explicitly provided.
-
-**Response 200 OK:** Updated tenant processor configuration (credentials redacted).
-
-**Side effects:**
-- All `PaymentMethod` records for the tenant are set to `isValid = false`.
-- A NOTIF-* (stored card invalidation) notification is queued for all affected households.
-
----
-
-## 5. White-Label Config Endpoints
-
-**Motivating issues:** CRT-H-008 / GAP-010, UC-032 (v1.0 GA feature with no API surface).
-**Corresponding entity:** `WhiteLabelConfig` (`data-model-proposed.md`)
-**Service owner:** Operator Service
-
----
-
-### GET /api/v1/operator/white-label
-
-Fetch the white-label configuration for the authenticated operator's tenant.
-
-**Auth:** Required. Role: `operator`.
-
-**Response 200 OK:**
-```json
-{
-  "customDomain": "lessons.alpineresort.com",
-  "domainVerified": false,
-  "logoUrl": "string | null",
-  "faviconUrl": "string | null",
-  "primaryColor": "#1A3C5E",
-  "secondaryColor": "#F5A623",
-  "embedCodeToken": "string"
-}
-```
-
----
-
-### PUT /api/v1/operator/white-label
-
-Create or update the white-label configuration (upsert).
-
-**Auth:** Required. Role: `operator`. Requires Enterprise subscription tier.
-
-**Request body:**
-```json
-{
-  "customDomain": "string | null",
-  "logoUrl": "string | null",
-  "faviconUrl": "string | null",
-  "primaryColor": "string (hex) | null",
-  "secondaryColor": "string (hex) | null"
-}
-```
-
-**Response 200 OK:** Full white-label config object.
-
-**Notes:**
-- Setting `customDomain` initiates DNS verification polling. `domainVerified` starts as `false` and transitions to `true` once the CNAME record is detected.
-- The `embedCodeToken` is auto-generated on first creation and is immutable (rotate via a separate endpoint if needed).
-
----
-
-### GET /api/v1/operator/white-label/dns-status
-
-Poll the current DNS verification status for the configured custom domain.
-
-**Auth:** Required. Role: `operator`.
-
-**Response 200 OK:**
-```json
-{
-  "customDomain": "string",
-  "domainVerified": false,
-  "lastCheckedAt": "ISO 8601 timestamp",
-  "expectedCname": "slopebook-verify.example.com"
-}
-```
-
----
-
-## 6. Summary of New Endpoint Groups
-
-| Group | Count | Blocker/HIGH | Critique Ref |
-|---|---|---|---|
-| Slot Reservation | 2 | BLOCKER | CRT-H-001 |
-| Cancellation Policy CRUD | 5 | BLOCKER | CRT-H-002 |
-| Booking guest checkout payload | Amendment | BLOCKER | CRT-H-003 |
-| Booking assign / reassign / bulk-cancel | 3 | HIGH | CRT-H-008 |
-| Processor test + switch safeguard | 2 | HIGH | CRT-H-007, CRT-H-008 |
-| White-label config | 3 | HIGH | CRT-H-008 |
-
-These 16 endpoint definitions (including the booking payload amendment) address the 16 missing endpoint groups flagged in `consistency-report.md §4`. OAuth token flow endpoints (for Google Calendar sync, OQ-021) are deferred pending resolution of OQ-021.
+## API Change Summary — Run 9 (2026-04-04)
+
+**Added:** 18 endpoints
+- `POST /api/v1/slot-reservations`
+- `POST /api/v1/guest-checkouts`
+- `PATCH /api/v1/bookings/:id/checkin`
+- `PATCH /api/v1/bookings/:id/reassign` (with documented request + response payloads — OQ-066)
+- `POST /api/v1/bookings/bulk-cancel`
+- `GET /api/v1/bookings/:id/notes`
+- `POST /api/v1/bookings/:id/tip` (with status guard, 48h window, idempotency key — CR-002/CR-003 Run 9)
+- `GET /api/v1/cancellation-policies`
+- `POST /api/v1/cancellation-policies`
+- `PATCH /api/v1/cancellation-policies/:id`
+- `PATCH /api/v1/cancellation-policies/:id/default`
+- `POST /api/v1/users`
+- `POST /api/v1/auth/forgot-password`
+- `POST /api/v1/auth/reset-password`
+- `GET /api/v1/instructors/:id/certifications`
+- `POST /api/v1/instructors/:id/certifications`
+- `PATCH /api/v1/instructors/:id/certifications/:certId`
+- `GET /api/v1/instructors/:id/earnings` (previously undocumented detail added)
+
+**Fixed:** 6
+- `POST /api/v1/bookings/:id/review` — removed tip reference (tip is a separate endpoint)
+- `POST /api/v1/auth/register` — documented required fields and payload
+- `GET /api/v1/availability` — added `age` and `skillLevel` filter params
+- Booking payload `learnerId` — changed to `"uuid | null"` to support guest checkout path (CR-001 Run 9)
+- Booking payload `paymentMethodId` — changed to `"uuid | null"` for guest checkout processor SDK path
+- `PATCH /api/v1/bookings/:id/reassign` — documented request and response payloads (OQ-066)
+
+**Deprecated:** 0
+
+**Unchanged:** 29 endpoints

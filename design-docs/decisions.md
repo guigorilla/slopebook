@@ -12,6 +12,16 @@ Format:
 - **[Topic]:** [Decision]. [Reason if relevant.]
 
 ---
+## 2026-04-04
+
+- **Tips:** Tips are in scope for v1.0 as an optional post-lesson flow.
+  Post-lesson flow: rating (required) + tip (optional, separate payment transaction).
+  OQ-043 is superseded by this decision. Schema must include tipAmountCents
+  on BookingReview entity.
+
+- **Package payments:** Payment.bookingId is nullable with lessonPackageId FK 
+  (also nullable) on the Payment entity. No separate PackagePayment entity. 
+  OQ-059 resolved. decisions.md supersedes Run 7 data-model approach.
 
 ## 2026-03-29
 

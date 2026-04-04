@@ -1,7 +1,7 @@
 # Slopebook — Use Cases (P0)
 
-**Document Status:** Draft — Generate Pipeline Run 8
-**Last Updated:** 2026-04-04
+**Document Status:** Draft — Generate Pipeline Run 6
+**Last Updated:** 2026-03-28
 **Author:** Product-Lead Agent
 **Scope:** P0 (Alpha — Q2 2026) use cases only
 
@@ -25,7 +25,7 @@
 6. Guest proceeds to booking summary.
 
 **Alternate Flows:**
-- No availability on selected date → guest sees empty state with option to join waitlist.
+- No availability on selected date → guest sees empty state with option to join waitlist (P1).
 - Guest prefers specific instructor → filters grid before selecting date.
 
 **Postconditions:**
@@ -59,7 +59,6 @@
 - Countdown timer is visible throughout remaining checkout steps.
 
 **Priority:** P0
-**Note (OQ-011):** Soft-hold TTL is 15 minutes, platform constant.
 
 ---
 
@@ -79,7 +78,7 @@
 5. System creates GuestCheckout record with all collected fields.
 6. Guest enters payment details via processor JS SDK; card is not saved.
 7. System captures payment via Payment Service (Stripe or Shift4 per tenant processor).
-8. If booking DB write fails: retry DB write up to 3 times using captured payment (OQ-053); on 3rd failure, initiate void with 4 retries at 100ms intervals; if void fails after all retries, silently set Payment.status = void_pending (OQ-056).
+8. If booking DB write fails: retry DB write up to 3 times using captured payment (OQ-053); on 3rd failure, initiate void with 4 retries at 100ms intervals; if void fails silently after all retries, set Payment.status = void_pending (OQ-056).
 9. On success: Booking confirmed with status = confirmed.
 10. Confirmation email + SMS sent in guest's preferredLanguage; .ics calendar attachment included.
 11. Confirmation screen shown with booking reference; guest-checkout users see ContactSchoolCard (OQ-033).
@@ -112,7 +111,7 @@
 4. User selects payment method (card-on-file or enters new card).
 5. New card optionally saved as PaymentMethod on the Household.
 6. System captures payment via Payment Service.
-7. If booking DB write fails: retry DB write up to 3 times using captured payment (OQ-053); on 3rd failure, initiate void with 4 retries at 100ms intervals; if void fails after all retries, silently set Payment.status = void_pending (OQ-056).
+7. If booking DB write fails: retry DB write up to 3 times using captured payment (OQ-053); on 3rd failure, initiate void with 4 retries at 100ms intervals; if void fails silently, set Payment.status = void_pending (OQ-056).
 8. On success: Booking confirmed; cancel CTA available in account dashboard.
 9. Confirmation email + SMS sent; .ics included.
 
@@ -185,35 +184,27 @@
 
 ---
 
-## UC-007 — Submit post-lesson rating and optional tip
+## UC-007 — Rate an instructor after a lesson
 
 **Persona:** Guest (signed-in)
-**Goal:** Submit a rating (required) and optional tip payment after a completed lesson.
+**Goal:** Submit a rating and optional comment after a completed lesson.
 **Preconditions:**
-- Booking.status = completed (set by instructor per UC-013 or auto-completed at +2 hours per decisions.md 2026-03-29).
+- Booking.status = completed.
 - No existing InstructorRating for this booking.
 - User is authenticated.
 
 **Main Flow:**
-1. User sees rating prompt in account dashboard for a completed lesson (or clicks link in post-lesson email).
-2. User selects 1–5 star rating and optionally adds a written comment.
+1. User sees rating prompt in account dashboard for completed lesson.
+2. User selects 1–5 star rating and optionally adds a comment.
 3. System creates InstructorRating record (tenantId, bookingId, instructorId, rating, comment).
-4. User is optionally prompted to add a tip (separate payment transaction, not part of original booking charge).
-5. If tip submitted: system creates a new Payment record linked to bookingId; charge is captured via processor.
-6. Confirmation of rating (and tip, if submitted) shown.
 
 **Alternate Flows:**
-- User dismisses prompt → no rating created; prompt removed from dashboard.
-- Post-lesson email link → user clicks link in confirmation/completion email; arrives at review page for that specific booking; authenticated before proceeding.
-- Tip declined → rating saved without tip; no payment created.
+- User dismisses prompt → no rating created; prompt removed.
 
 **Postconditions:**
 - One InstructorRating per Booking (unique constraint enforced).
-- Tip Payment record created if tip was submitted.
 
 **Priority:** P0
-**Note (OQ-028):** Ratings are internal-only within tenant; no public-facing display.
-**Note (OQ-043 conflict):** OQ-043 (2026-03-27) resolved "No tips" and removed `Payment.tipAmountCents` and `Tenant.tipsEnabled`. However, decisions.md (2026-03-26 and 2026-03-29) explicitly includes tips as an optional separate post-lesson payment transaction. This conflict must be resolved by the human before implementation. For this pipeline run, the decisions.md definition is followed (tips included as optional). If OQ-043 intent is "no tips at all," the uc-registry item `[ ] Student submits tip after lesson is marked complete (optional)` should be marked `[>] DEFERRED` and this UC updated to remove step 4–5.
 
 ---
 
@@ -263,7 +254,6 @@
 - No state change; read-only view.
 
 **Priority:** P0
-**Note (OQ-055):** `in_progress` status removed from Booking enum; schedule shows only confirmed bookings.
 **Note (OQ-050):** Instructor receives email notification on new booking assignment; not required for P0.
 
 ---
@@ -280,17 +270,17 @@
 1. Instructor opens the booking from Today's Schedule and taps Check In.
 2. System displays student details: name, dateOfBirth, skill level, parental consent indicator (if minor).
 3. Instructor confirms student identity and taps Confirm Check-In.
-4. System sets Booking.checkedInAt = now; status remains confirmed.
+4. System sets Booking.checkedInAt = now.
 
 **Alternate Flows:**
 - Student not present → instructor marks no-show instead (UC-011).
 
 **Postconditions:**
-- Booking.checkedInAt is set; Booking.status remains confirmed.
+- Booking.checkedInAt is set; student is checked in.
 
 **Priority:** P0
-**Note (OQ-052):** Smartwaiver embed integration deferred to a later phase. Waiver assumed completed for P0. No waiverToken generation or embed in P0 check-in flow.
-**Note (OQ-055):** Booking.status = in_progress removed from enum. Check-in sets checkedInAt only; status transitions directly from confirmed to completed or no_show.
+**Note (OQ-052):** Smartwaiver embed integration deferred to a later phase. Waiver assumed completed. No waiverToken generation or embed in P0 check-in flow.
+**Note (OQ-055):** Booking.status = in_progress removed from enum. Check-in sets checkedInAt only; status remains confirmed until completed or no-show.
 
 ---
 
@@ -336,33 +326,25 @@
 - BookingNote created; if isSharedWithGuest = true, visible in customer's booking detail.
 
 **Priority:** P0
-**Note (OQ-055):** Precondition updated: in_progress removed; notes can be added on confirmed or completed bookings.
 
 ---
 
-## UC-013 — Instructor marks lesson complete (and auto-completion)
+## UC-013 — Instructor marks lesson complete
 
-**Persona:** Instructor / System
-**Goal:** Close out a lesson after it has concluded; unlock post-lesson flow for student.
+**Persona:** Instructor
+**Goal:** Close out a lesson after it has concluded.
 **Preconditions:**
-- Booking.status = confirmed; lesson end time has passed (or is within 2 hours of passing for auto-completion).
+- Booking.status = confirmed; lesson end time has passed.
 
 **Main Flow:**
 1. Instructor taps Complete on a booking card.
-2. System sets Booking.status = completed; Booking.checkedInAt already set from UC-010.
-3. System fires booking.completed event → triggers post-lesson review email to student (UC-007 email link path).
-4. booking.completed event also triggers earnings calculation for the instructor.
-
-**Alternate Flows:**
-- Auto-completion: If instructor has not manually marked the lesson complete within 2 hours after scheduled end time, system auto-sets Booking.status = completed (decisions.md 2026-03-29). Same booking.completed event fires; same downstream effects apply.
-- Instructor marks complete before lesson end time → system accepts; booking transitions immediately.
+2. System sets Booking.status = completed.
+3. System queues post-lesson review email to student (booking.completed event).
 
 **Postconditions:**
-- Booking.status = completed; student can now submit rating (UC-007); post-lesson email queued.
-- Earnings calculation triggered for instructor.
+- Booking.status = completed; student can now submit a rating (UC-007).
 
 **Priority:** P0
-**Note (OQ-055):** Status transition is confirmed → completed directly. in_progress is not used.
 
 ---
 
@@ -401,7 +383,7 @@
 1. Admin drags a booking card to a different instructor on the schedule (or uses reassign modal).
 2. System checks for BOOKING_CONFLICT on the target instructor.
 3. System updates Booking.instructorId; previous instructor's slot is freed.
-4. Notification email sent to student (instructor change); notification to new instructor (OQ-050: not required for P0).
+4. Notification email sent to student (instructor change); notification to new instructor (OQ-050: not P0 for instructor notification).
 
 **Alternate Flows:**
 - Target instructor already booked at that time → BOOKING_CONFLICT; drag reverted.
@@ -480,7 +462,6 @@
 - CancellationPolicy saved; can be attached to LessonTypes.
 
 **Priority:** P0
-**Note (OQ-014):** Default non-refundable policy seeded atomically at tenant creation.
 
 ---
 
@@ -544,17 +525,15 @@
 3. For existing customer: admin searches and selects the customer's Learner record.
 4. For walk-up customer with no account: admin creates a new User account and Learner profile on their behalf (OQ-054).
 5. Admin selects or enters payment method; system captures payment.
-6. System creates Booking linked to the Learner; CHECK constraint `(learnerId IS NOT NULL)` satisfied.
+6. System creates Booking linked to the Learner.
 
 **Alternate Flows:**
 - No availability for requested slot → admin checks schedule view and selects alternate.
 
 **Postconditions:**
-- Booking confirmed; confirmation sent to customer's email.
-- Walk-up customer now has a full account and booking history from first visit.
+- Booking confirmed; confirmation sent to customer if email provided.
 
 **Priority:** P0
-**Note (OQ-054):** Admin creates a full User + Learner record for walk-up customers rather than using GuestCheckout.
 
 ---
 
@@ -575,13 +554,13 @@
 - User.preferredLanguage updated; UI and communications reflect new language.
 
 **Priority:** P0
-**Note (OQ-030):** FR language available on all subscription tiers including Starter. No tier-based suppression required.
+**Note (OQ-030):** FR language available on all subscription tiers including Starter.
 
 ---
 
 ## UX Flows Missing Steps
 
 - `ux-flows.md §3 Instructor App` — "Sync with Google Calendar (optional)" listed under Availability Management; deferred to v1.5 (OQ-021); no UC defined for P0 or P1
-- `ux-flows.md §3 Instructor App` — "Tips (if applicable)" listed in Earnings Dashboard; conflict between OQ-043 (no tips) and decisions.md (optional post-lesson tip); UC-007 step 4–5 addresses this but schema support is unresolved — see UC-007 Open Questions note
+- `ux-flows.md §3 Instructor App` — "Tips (if applicable)" listed in Earnings Dashboard; removed from all plans (OQ-043); no UC
 - `ux-flows.md §5 Operator Portal` — "Pricing floors and seasonal rate cards" listed; removed from v1.0 scope (OQ-042)
-- `ux-flows.md §1 Customer` — "Select learner (if household account)" step has no P0 screen for adding a new learner mid-checkout; deferred to P1 household management (UC-023)
+- `ux-flows.md §1 Customer` — "Select learner (if household account)" step has no P0 screen for adding a new learner mid-checkout; deferred to P1 household management

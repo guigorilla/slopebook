@@ -1,9 +1,9 @@
 # Slopebook — Technical Requirements (P0)
 
-**Document Status:** Draft — Generate Pipeline Run 7
-**Last Updated:** 2026-03-29
+**Document Status:** Draft — Generate Pipeline Run 8
+**Last Updated:** 2026-04-04
 **Author:** Tech-Lead Agent
-**Source:** use-cases-p0-proposed.md (Run 7), data-model.md (v0.5), api-design.md
+**Source:** use-cases-p0-proposed.md (Run 8), data-model.md (v0.5), api-design.md, decisions.md
 **Scope:** P0 (Alpha) use cases only
 
 ---
@@ -18,7 +18,6 @@
 **Schema Changes:** None
 **Auth:** Public (no JWT required for availability query)
 **Flags:** i18n, multi-tenant
-**Open Technical Questions:** None
 
 ---
 
@@ -31,7 +30,6 @@
 **Schema Changes:** None (SlotReservation schema complete in v0.5)
 **Auth:** Public (guest path); guest or JWT for authenticated path
 **Flags:** multi-tenant, performance
-**Open Technical Questions:** None
 
 ---
 
@@ -81,7 +79,6 @@
 **Schema Changes:** None (Learner.parentalConsentGiven/At active in v0.5)
 **Auth:** Public (no JWT)
 **Flags:** i18n, multi-tenant
-**Open Technical Questions:** None
 
 ---
 
@@ -94,20 +91,24 @@
 **Schema Changes:** None
 **Auth:** `guest` (own bookings only), `school_admin` (any booking in tenant), `instructor` (own bookings per OQ-058)
 **Flags:** multi-tenant
-**Note (OQ-033):** Guest-checkout users have no JWT; no self-service cancel endpoint available for guest path. School must cancel on their behalf.
+**Note (OQ-033):** Guest-checkout users have no JWT; no self-service cancel endpoint available for guest path.
 **Note (OQ-058):** Instructors have admin-level access to their own lessons and can cancel them directly.
 
 ---
 
-## TR-007 — Rate an instructor after a lesson
+## TR-007 — Submit post-lesson rating and optional tip
 
 **Use Case:** UC-007
-**Services:** Booking Engine
+**Services:** Booking Engine, Payment
 **API Changes:**
-- `POST /api/v1/bookings/:id/review` — create InstructorRating; validate Booking.status = completed; one rating per booking (unique constraint)
-**Schema Changes:** None (InstructorRating entity in v0.5)
+- `POST /api/v1/bookings/:id/review` — create InstructorRating; validate Booking.status = completed; one rating per booking (unique constraint); description updated: "Submit rating after lesson completion" (CR-002 fix)
+- `POST /api/v1/bookings/:id/tip` — [conditional on tip decision] create tip Payment record linked to bookingId; [PCI] new endpoint; only if tip feature retained after OQ-043 resolution
+**Schema Changes:**
+- `Payment.bookingId nullable` — decisions.md 2026-03-29: bookingId is nullable; at least one of bookingId or lessonPackageId must be non-null (application-layer enforcement)
+- `Payment.lessonPackageId uuid FK → LessonPackage, nullable` — decisions.md 2026-03-29; added for P1 package payments; additive
 **Auth:** `guest` role; caller's learnerId must match Booking.learnerId
-**Flags:** multi-tenant
+**Flags:** multi-tenant, PCI (tip endpoint)
+**Open Technical Questions:** Tip endpoint depends on OQ-043 conflict resolution. If tips removed: omit `POST /api/v1/bookings/:id/tip` and schema carries no impact beyond already-approved schema changes.
 
 ---
 
@@ -134,7 +135,6 @@
 **Schema Changes:** None
 **Auth:** `instructor` (own bookings only)
 **Flags:** i18n, multi-tenant
-**Note (OQ-055):** `in_progress` removed from Booking.status enum. Schedule query uses `status=confirmed` only.
 
 ---
 
@@ -147,8 +147,8 @@
 **Schema Changes:** None
 **Auth:** `instructor` (own bookings only)
 **Flags:** multi-tenant
-**Note (OQ-052):** Smartwaiver deferred. Check-in sets checkedInAt only. No waiverToken generation in P0.
-**Note (OQ-055):** Booking.status = in_progress removed. checkedInAt field tracks check-in event; status transitions directly from confirmed to completed or no_show.
+**Note (OQ-052):** Smartwaiver deferred. Check-in sets checkedInAt only.
+**Note (OQ-055):** checkedInAt field tracks check-in; status goes confirmed → completed or no_show directly.
 
 ---
 
@@ -174,20 +174,31 @@
 **Schema Changes:** None
 **Auth:** `instructor` (write own notes), `school_admin` (read all), `guest` (read isSharedWithGuest = true only)
 **Flags:** multi-tenant
-**Note (OQ-055):** Preconditions updated — notes accepted on confirmed or completed bookings (in_progress removed).
 
 ---
 
 ## TR-013 — Instructor marks lesson complete
 
-**Use Case:** UC-013
+**Use Case:** UC-013 (manual path)
 **Services:** Booking Engine, Notification
 **API Changes:**
-- `PATCH /api/v1/bookings/:id/complete` — set status = completed; emit booking.completed event (to be added to api-design.md Notification Service event list)
+- `PATCH /api/v1/bookings/:id/complete` — set status = completed; emit booking.completed event
 **Schema Changes:** None
 **Auth:** `instructor` (own bookings)
 **Flags:** multi-tenant
-**Note (OQ-055):** Status transition: confirmed → completed directly. in_progress is not an intermediate state.
+**Note (OQ-055):** Status transition: confirmed → completed directly.
+
+---
+
+## TR-013a — Booking auto-completion
+
+**Use Case:** UC-013 (auto-completion path)
+**Services:** Booking Engine, Notification
+**API Changes:** None (internal scheduled job — no new public endpoint)
+**Schema Changes:** None
+**Auth:** System (no JWT; internal scheduler)
+**Flags:** multi-tenant, performance
+**Implementation note:** Scheduled job runs every N minutes (interval TBD); queries Bookings where status = confirmed AND endAt < now - 2h; sets status = completed; fires booking.completed event for each. Idempotency: check status = confirmed before each write. Emit AuditLog entry with actorType = system. (decisions.md 2026-03-29)
 
 ---
 
@@ -197,7 +208,7 @@
 **Services:** Booking Engine, Scheduling & Availability
 **API Changes:**
 - `GET /api/v1/schedule?date=&instructorId=` — admin view of all instructor schedules; existing endpoint
-- Real-time updates via server-sent events or polling (push mechanism TBD)
+- Real-time updates via server-sent events or polling (push mechanism TBD — open design question)
 **Schema Changes:** None
 **Auth:** `school_admin`
 **Flags:** multi-tenant, performance
@@ -224,6 +235,8 @@
 - `POST /api/v1/instructors` — create Instructor + InstructorTenant (onboardingStatus = pending)
 - `PATCH /api/v1/instructors/:id/approve` — set InstructorTenant.onboardingStatus = approved
 - `POST /api/v1/instructors/:id/certifications` — attach Certification with documentUrl; new endpoint
+- `GET /api/v1/instructors/:id/certifications` — list certifications; new endpoint
+- `PATCH /api/v1/instructors/:id/certifications/:certId` — update expiresAt, documentUrl, alertSentAt; new endpoint
 **Schema Changes:** None
 **Auth:** `school_admin`
 **Flags:** multi-tenant
@@ -250,8 +263,8 @@
 **Services:** Catalog & Lesson (Cancellation)
 **API Changes:**
 - `POST /api/v1/cancellation-policies` — create policy; new endpoint
-- `PATCH /api/v1/cancellation-policies/:id` — update policy
-- `PATCH /api/v1/cancellation-policies/:id/default` — set as default; enforce unique partial index
+- `PATCH /api/v1/cancellation-policies/:id` — update policy; new endpoint
+- `PATCH /api/v1/cancellation-policies/:id/default` — set as default; enforce unique partial index; new endpoint
 **Schema Changes:** None
 **Auth:** `school_admin`
 **Flags:** multi-tenant
@@ -277,7 +290,7 @@
 **Services:** Instructor
 **API Changes:**
 - `GET /api/v1/instructors` — include certificationStatus computed field (valid/expiring_soon/expired)
-- `PATCH /api/v1/instructors/:id/certifications/:certId` — update expiresAt, documentUrl, alertSentAt
+- `PATCH /api/v1/instructors/:id/certifications/:certId` — update expiresAt, documentUrl, alertSentAt (covered under TR-016)
 **Schema Changes:** None
 **Auth:** `school_admin`
 **Flags:** multi-tenant
@@ -289,13 +302,13 @@
 **Use Case:** UC-021
 **Services:** Booking Engine, Account & Identity, Payment
 **API Changes:**
-- `POST /api/v1/users` — admin creates a User account for walk-up customer (OQ-054)
-- `POST /api/v1/households/:id/learners` — admin creates a Learner profile for walk-up customer (OQ-054)
-- `POST /api/v1/bookings` — admin path; learnerId required (linked to newly-created or existing Learner)
+- `POST /api/v1/users` — admin creates a User account for walk-up customer (OQ-054); new endpoint
+- `POST /api/v1/households/:id/learners` — admin creates a Learner profile for walk-up customer
+- `POST /api/v1/bookings` — admin path; learnerId required
 **Schema Changes:** None
 **Auth:** `school_admin`
 **Flags:** PCI, multi-tenant
-**Note (OQ-054):** Admin creates a full User + Learner record for walk-up customers rather than using GuestCheckout. Walk-up customers get a full account and booking history from their first visit. Satisfies Booking CHECK constraint `(learnerId IS NOT NULL)`.
+**Note (OQ-054):** Admin creates full User + Learner record for walk-up customers. Satisfies Booking CHECK `(learnerId IS NOT NULL)`.
 
 ---
 
@@ -308,8 +321,8 @@
 **Schema Changes:** None
 **Auth:** Any authenticated role
 **Flags:** i18n
-**Note (OQ-030):** FR available on all tiers including Starter. No tier-based suppression logic required.
-**Note (OQ-057):** Language selector in registration and guest checkout UI defaults to browser geolocation; value stored on User.preferredLanguage or GuestCheckout.preferredLanguage.
+**Note (OQ-030):** FR available on all tiers including Starter.
+**Note (OQ-057):** Language selector in registration and guest checkout UI defaults to browser geolocation.
 
 ---
 
@@ -321,16 +334,18 @@
 4. `POST /api/v1/cancellation-policies` and `PATCH /api/v1/cancellation-policies/:id` — required by TR-018; absent from api-design.md
 5. `PATCH /api/v1/cancellation-policies/:id/default` — required by TR-018; absent from api-design.md
 6. `POST /api/v1/bookings/bulk-cancel` — required by TR-019; absent from api-design.md
-7. `POST /api/v1/auth/register` — must accept dateOfBirth, skillLevel, preferredLanguage, parentalConsentGiven; current spec undocumented
+7. `POST /api/v1/auth/register` — must accept dateOfBirth, skillLevel, preferredLanguage, parentalConsentGiven; current spec underdocumented
 8. Real-time push mechanism for Admin Schedule View (TR-014) — SSE vs WebSocket vs polling decision needed
 9. `PATCH /api/v1/bookings/:id/reassign` — required by TR-015; absent from api-design.md
-10. `POST /api/v1/instructors/:id/certifications` — required by TR-016; absent from api-design.md; file storage strategy not defined
-11. `DELETE /api/v1/households/:id/learners/:learnerId` — 409 LEARNER_HAS_ACTIVE_BOOKINGS error code not documented
-12. `booking.completed` notification event — required by TR-013; absent from api-design.md Notification Service event list
-13. `PATCH /api/v1/bookings/:id/complete` — required by TR-013; absent from api-design.md
-14. `PATCH /api/v1/bookings/:id/no-show` — required by TR-011; absent from api-design.md
+10. `POST /api/v1/instructors/:id/certifications` — required by TR-016; absent from api-design.md
+11. `GET /api/v1/instructors/:id/certifications` — required by TR-016; absent from api-design.md
+12. `PATCH /api/v1/instructors/:id/certifications/:certId` — required by TR-020; absent from api-design.md
+13. `DELETE /api/v1/households/:id/learners/:learnerId` — 409 LEARNER_HAS_ACTIVE_BOOKINGS error code not documented in api-design.md error format section
+14. `booking.completed` notification event — required by TR-013; absent from api-design.md Notification Service event list
 15. `POST /api/v1/guest-checkouts` — required by TR-003; absent from api-design.md
 16. `POST /api/v1/users` — required by TR-021 (admin walk-up path, OQ-054); absent from api-design.md
+17. `POST /api/v1/bookings/:id/tip` — required by TR-007 (conditional on OQ-043 resolution); absent from api-design.md
+18. Password reset flow — no `POST /api/v1/auth/forgot-password` or `POST /api/v1/auth/reset-password` defined anywhere; accounts will be locked without recovery path
 
 ---
 
@@ -347,6 +362,8 @@
 | `Learner.parentalConsentAt` | timestamp, nullable (active) | Additive | TR-005 |
 | `Payment.groupSessionId` | REMOVED | Destructive | OQ-031 |
 | `Payment.status void_pending` | enum value added | Additive | TR-003, OQ-056 |
+| `Payment.bookingId` | now nullable (was NOT NULL) | Destructive (constraint change) | TR-007, decisions.md 2026-03-29 |
+| `Payment.lessonPackageId` | uuid FK → LessonPackage, nullable | Additive | TR-007, decisions.md 2026-03-29 |
 | `PaymentMethod.processorTokenId` | string, encrypted [PCI] | Annotation change | TR-004 |
 | `WaitlistEntry.position` | integer, nullable | Additive | P1 |
 | `Booking.status in_progress` | REMOVED from enum | Destructive | OQ-055 |

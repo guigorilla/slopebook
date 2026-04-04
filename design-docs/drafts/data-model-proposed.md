@@ -1,10 +1,9 @@
 # Slopebook — Data Model
 
-**Document Status:** Draft — Review Pipeline Run 7
-**Last Updated:** 2026-03-29
-**Author:** Data-Modeler Agent
-**Version:** 0.6
-**Sources:** use-cases-p0-proposed.md (Run 7), tech-requirements-proposed.md (Run 7), data-model.md (v0.5), critique-proposed.md (Run 7)
+**Document Status:** Draft — Review Pipeline Run 9
+**Last Updated:** 2026-04-04
+**Version:** 0.7
+**Sources:** use-cases-p0-proposed.md (Run 8), tech-requirements-proposed.md (Run 8), critique-proposed.md (Run 9), decisions.md (through 2026-03-29), open-questions-proposed.md (OQ-059 and OQ-061 resolved 2026-04-04)
 
 ---
 
@@ -77,8 +76,8 @@ Learner
   notes                 text, nullable
   waiverSignedAt        timestamp, nullable
   waiverVersion         string, nullable
-  waiverToken           string, nullable          -- reserved: Smartwaiver integration deferred (OQ-052); null for P0
-  waiverStatus          enum(not_required, pending, signed, fallback_typed_name), nullable  -- reserved: deferred (OQ-052); null for P0
+  waiverToken           string, nullable          -- reserved: Smartwaiver deferred (OQ-052); null for P0
+  waiverStatus          enum(not_required, pending, signed, fallback_typed_name), nullable
   parentalConsentGiven  boolean, nullable
   parentalConsentAt     timestamp, nullable
   createdAt             timestamp
@@ -99,9 +98,12 @@ Instructor
   bioFr           text
   photoUrl        string, nullable
   languagesSpoken string[]
+  averageRating   decimal(3,2), nullable     -- ADDED v0.6: cached aggregate from InstructorRating; updated on review submit (POST /api/v1/bookings/:id/review side effect); null until first rating
   createdAt       timestamp
   updatedAt       timestamp
 ```
+
+`averageRating`: recomputed by application layer on every `InstructorRating` insert. Formula: `AVG(rating)` over all InstructorRating records for this instructor within this tenant. NULL until at least one rating exists.
 
 ---
 
@@ -208,7 +210,7 @@ Availability
   tenantId      uuid, FK → Tenant
   startAt       timestamp
   endAt         timestamp
-  recurrence    text, nullable
+  recurrence    text, nullable     -- CHANGED v0.6: was json; now text for RRULE string storage
   isBlocked     boolean
   createdAt     timestamp
   updatedAt     timestamp
@@ -253,15 +255,14 @@ GuestCheckout
   skillLevel            enum(beginner, intermediate, advanced)
   parentalConsentGiven  boolean, nullable
   parentalConsentAt     timestamp, nullable
-  waiverToken           string, nullable              -- reserved: Smartwaiver deferred (OQ-052); null for P0
-  waiverStatus          enum(not_required, pending, signed, fallback_typed_name), nullable  -- reserved: deferred (OQ-052); null for P0
+  waiverToken           string, nullable
+  waiverStatus          enum(not_required, pending, signed, fallback_typed_name), nullable
   createdAt             timestamp
   updatedAt             timestamp
 ```
 
 Index: `(tenantId, email)`
 Application-layer enforcement: if `learnerDateOfBirth` indicates age < 18, `parentalConsentGiven` must be `true`.
-Note (OQ-057): `preferredLanguage` defaults to browser geolocation at checkout; collected in the Authentication Gate UI.
 
 ---
 
@@ -304,10 +305,11 @@ Booking
   cancellationPolicyId  uuid, FK → CancellationPolicy
   startAt               timestamp
   endAt                 timestamp
-  status                enum(confirmed, completed, cancelled, no_show)  -- in_progress REMOVED per OQ-055
+  status                enum(confirmed, completed, cancelled, no_show)
   skillLevelAtBooking   enum(beginner, intermediate, advanced)
   meetingPoint          string, nullable
   checkedInAt           timestamp, nullable
+  autoCompletedAt       timestamp, nullable     -- ADDED v0.6: set by scheduler job (TR-013a); null if instructor-completed manually
   cancelledAt           timestamp, nullable
   cancellationReason    string, nullable
   createdAt             timestamp
@@ -320,10 +322,10 @@ CHECK constraints (application layer):
 - `startAt < endAt`
 - `cancellationPolicyId IS NOT NULL`
 
-Status transition rules (OQ-055):
-- `confirmed` → `completed`: set by instructor (UC-013); `checkedInAt` records check-in time
-- `confirmed` → `no_show`: set by instructor (UC-011)
-- `confirmed` → `cancelled`: set by customer, admin, instructor (own lessons), or cascade (UC-006, UC-019, UC-031a)
+Status transitions (OQ-055):
+- `confirmed` → `completed`: instructor action (UC-013) or system at endAt + 2h (TR-013a)
+- `confirmed` → `no_show`: instructor action (UC-011)
+- `confirmed` → `cancelled`: customer, admin, instructor (own lessons), or cascade
 
 ---
 
@@ -358,8 +360,9 @@ InstructorRating
 ```
 
 CHECK: `rating >= 1 AND rating <= 5`
-Unique constraint: `(bookingId)`
+Unique constraint: `(bookingId)` — one rating per booking
 Index: `(instructorId, tenantId)`
+Side effect on insert: application layer recomputes `Instructor.averageRating` for the affected instructor.
 
 ---
 
@@ -371,8 +374,9 @@ Payment
   tenantId              uuid, FK → Tenant
   householdId           uuid, FK → Household, nullable
   guestCheckoutId       uuid, FK → GuestCheckout, nullable
-  bookingId             uuid, FK → Booking, nullable        -- CHANGED: nullable for P1 package purchase compatibility (CR-003/OQ-059)
-  lessonPackageId       uuid, FK → LessonPackage, nullable  -- ADDED: P1 package purchase payment link (CR-003/OQ-059)
+  bookingId             uuid, FK → Booking, nullable          -- CHANGED v0.6: nullable per decisions.md 2026-03-29; OQ-059 resolved 2026-04-04
+  lessonPackageId       uuid, FK → LessonPackage, nullable    -- ADDED v0.6: for package purchase payments; OQ-059 resolved 2026-04-04
+  paymentType           enum(booking_charge, tip, package_purchase), default 'booking_charge'  -- ADDED v0.6: CR-003 Run 8; default added v0.7 per CR Run 9
   processor             enum(stripe, shift4)
   processorPaymentId    string
   amountCents           integer
@@ -386,14 +390,16 @@ Payment
 
 CHECK constraints:
 - `(householdId IS NOT NULL) OR (guestCheckoutId IS NOT NULL)`
-- `(bookingId IS NOT NULL) OR (lessonPackageId IS NOT NULL)`  -- CHANGED: replaces `bookingId IS NOT NULL`; exactly one of bookingId or lessonPackageId must be set
-- `(bookingId IS NULL) OR (lessonPackageId IS NULL)`          -- ADDED: enforce mutual exclusion
+- `(bookingId IS NOT NULL) OR (lessonPackageId IS NOT NULL)`
+- `NOT (bookingId IS NOT NULL AND lessonPackageId IS NOT NULL)`
 - `refundedAmountCents <= amountCents`
 - `amountCents > 0`
+- `paymentType = 'package_purchase' → lessonPackageId IS NOT NULL` (application layer)
+- `paymentType IN ('booking_charge', 'tip') → bookingId IS NOT NULL` (application layer)
 
-`void_pending` (OQ-056): set when void fails after all retries. Void retry policy: 4 attempts at 100ms intervals; if all fail, silently set `void_pending` for ops review.
+Unique partial index: `(bookingId, paymentType)` WHERE `paymentType = 'tip'`  -- ADDED v0.7: one tip per booking; CR-002 Run 9
 
-**P1 Note (OQ-059):** `LessonPackage` entity is a P1 addition (UC-024). The `lessonPackageId` FK is defined here in anticipation but the LessonPackage entity itself is not defined in this P0 schema. The CHECK constraint `(bookingId IS NULL) OR (lessonPackageId IS NULL)` will evaluate correctly when both are null (P0 path: bookingId set, lessonPackageId null).
+`void_pending`: set when void fails after all retries (4 attempts at 100ms). Silent for end users; ops review queue (OQ-056).
 
 ---
 
@@ -521,6 +527,63 @@ AuditLog
 ```
 
 Immutable — no UPDATE or DELETE permitted. No `updatedAt`.
+`actorType = system` used for auto-completion events (TR-013a); `actorId` null for system actions.
+
+---
+
+### PasswordResetToken
+
+```
+PasswordResetToken
+  id          uuid, PK
+  userId      uuid, FK → User
+  tokenHash   string
+  expiresAt   timestamp
+  usedAt      timestamp, nullable
+  createdAt   timestamp
+```
+
+Index: `(tokenHash)` — lookup by token hash on reset
+Single-use: `usedAt` set on consumption; subsequent use rejected.
+Scope: included in schema now; P0 vs P1 scoping pending OQ-062 resolution. If P1, entity ships but endpoints remain behind feature flag until Beta.
+
+---
+
+### LessonPackage                                                     -- ADDED v0.6: P1 entity; defined now for FK validity on Payment.lessonPackageId; OQ-019; OQ-059 resolved
+
+```
+LessonPackage
+  id               uuid, PK
+  tenantId         uuid, FK → Tenant
+  householdId      uuid, FK → Household
+  lessonTypeId     uuid, FK → LessonType
+  totalCount       integer
+  remainingCount   integer
+  priceAmountCents integer
+  currency         enum(USD, CAD)
+  expiresAt        timestamp, nullable
+  isActive         boolean, default true
+  createdAt        timestamp
+  updatedAt        timestamp
+```
+
+CHECK: `remainingCount >= 0 AND remainingCount <= totalCount`
+Platform fee (1.5%) applied at purchase time (OQ-027).
+
+---
+
+### PackageRedemption                                                 -- ADDED v0.6: P1 entity; tracks per-booking usage of LessonPackage credits; UC-024
+
+```
+PackageRedemption
+  id               uuid, PK
+  lessonPackageId  uuid, FK → LessonPackage
+  bookingId        uuid, FK → Booking, unique
+  redeemedAt       timestamp
+  createdAt        timestamp
+```
+
+Unique on `bookingId` — one redemption per booking.
 
 ---
 
@@ -532,23 +595,34 @@ Immutable — no UPDATE or DELETE permitted. No `updatedAt`.
 
 ## Change Summary
 
-Payment.bookingId — CHANGED — nullable (was NOT NULL); CR-003/OQ-059 — destructive
-Payment.lessonPackageId — ADDED — P1 package payment FK; CR-003/OQ-059 — additive
-Payment CHECK `bookingId IS NOT NULL` — CHANGED — replaced with `(bookingId IS NOT NULL) OR (lessonPackageId IS NOT NULL)`; CR-003 — destructive
-Payment CHECK mutual exclusion — ADDED — `(bookingId IS NULL) OR (lessonPackageId IS NULL)`; CR-003 — additive
+| Entity.field | Change | Reference | Additive/Destructive |
+|---|---|---|---|
+| `Instructor.averageRating` | ADDED decimal(3,2) nullable | CR-sig Run 8; UC-001 display | Additive |
+| `Availability.recurrence` | CHANGED json → text | TR-008 RRULE support | Destructive (migration) |
+| `Booking.autoCompletedAt` | ADDED timestamp nullable | TR-013a; decisions.md 2026-03-29 | Additive |
+| `Booking.status in_progress` | REMOVED from enum | OQ-055 | Destructive |
+| `Payment.bookingId` | CHANGED: NOT NULL → nullable | decisions.md 2026-03-29; OQ-059 resolved | Destructive (constraint drop) |
+| `Payment.lessonPackageId` | ADDED uuid FK → LessonPackage nullable | decisions.md 2026-03-29; OQ-059 | Additive |
+| `Payment.paymentType` | ADDED enum default 'booking_charge' | CR-003 Run 8; CR min Run 9 (default added) | Additive |
+| `Payment unique partial index (bookingId, paymentType) WHERE tip` | ADDED | CR-002 Run 9 | Additive |
+| `Payment.groupSessionId` | REMOVED | OQ-031 | Destructive |
+| `Payment.status void_pending` | ADDED enum value | OQ-056 | Additive |
+| `Payment CHECK bookingId IS NOT NULL` | REMOVED | decisions.md 2026-03-29; CR-002 Run 8 | Destructive (constraint drop) |
+| `Payment CHECK (bookingId OR lessonPackageId) NOT NULL` | ADDED | decisions.md 2026-03-29 | Additive |
+| `Payment CHECK mutual exclusivity` | ADDED | decisions.md 2026-03-29 | Additive |
+| `PasswordResetToken` | ADDED entity | TR gap #18 | Additive |
+| `LessonPackage` | ADDED entity (P1) | OQ-019; OQ-059 FK validity | Additive |
+| `PackageRedemption` | ADDED entity (P1) | UC-024 | Additive |
 
 ---
 
 ## Migration Notes
 
-| Entity.field | Migration required | Risk |
+| Entity.field | Migration Required | Risk |
 |---|---|---|
-| `Booking.status in_progress` | DROP enum value. No prod data. | Low |
-| `Payment.status void_pending` | ADD enum value. Additive. | Low |
-| `GuestCheckout.preferredLanguage` | ADD DEFAULT 'en'. Backfill nulls. | Low |
-| `GuestCheckout.learnerDateOfBirth` | NOT NULL. No prod data. | Low |
-| `Payment.groupSessionId` | DROP FK column and CHECK. No prod data. | Low |
-| `PaymentMethod.processorTokenId` | Apply KMS envelope encryption. No prod data. | Low |
-| `Availability.recurrence` | Type change json → text. Requires data migration. | Med |
-| `Payment.bookingId` | ALTER COLUMN nullable. Additive in DB; check constraints updated. No prod data. | Low |
-| `Payment.lessonPackageId` | ADD COLUMN nullable FK. Additive. LessonPackage entity added in P1 migration. | Low |
+| `Availability.recurrence` | Unwrap JSON string values to plain TEXT: `UPDATE availability SET recurrence = recurrence #>> '{}' WHERE recurrence IS NOT NULL`; validate RRULE format before running | Med |
+| `Booking.status in_progress` | DROP enum value; verify zero rows with this status before running | Low |
+| `Payment.bookingId` | DROP CHECK `bookingId IS NOT NULL`; add new CHECK `(bookingId IS NOT NULL OR lessonPackageId IS NOT NULL)`; existing rows all have bookingId set — safe | Low |
+| `Payment.groupSessionId` | DROP FK column and associated CHECK; no prod data expected | Low |
+| `Payment.paymentType` | ADD column NOT NULL DEFAULT 'booking_charge'; no backfill needed (default covers all existing rows) | Low |
+| `PaymentMethod.processorTokenId` | Apply KMS envelope encryption; no prod data | Low |

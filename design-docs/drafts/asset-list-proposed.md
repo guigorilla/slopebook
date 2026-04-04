@@ -1,9 +1,9 @@
 # Slopebook — UI/UX Asset List
 
-**Document Status:** Draft — Generate Pipeline Run 7
-**Last Updated:** 2026-03-29
+**Document Status:** Draft — Generate Pipeline Run 8
+**Last Updated:** 2026-04-04
 **Author:** UI/UX Lead Agent
-**Source:** use-cases-p0-proposed.md (Run 7), tech-requirements-proposed.md (Run 7), ux-flows.md
+**Source:** use-cases-p0-proposed.md (Run 8), tech-requirements-proposed.md (Run 8), ux-flows.md
 **Scope:** P0 screens and components only. P1/P2 screens excluded.
 
 ---
@@ -82,6 +82,16 @@
 **i18n:** yes
 **Currency:** yes
 
+### Customer / Post-Lesson Review
+**Route:** /account/bookings/:id/review
+**UC:** UC-007
+**Elements:** star rating selector (1–5), comment textarea (optional), submit CTA, tip prompt (conditional on OQ-043 resolution: card selector + amount input + submit tip CTA)
+**States:** loading, rating-only (tip unavailable), rating-and-tip (tip available), already-submitted (redirect to booking detail), booking-not-completed (error)
+**Breakpoint:** both
+**i18n:** yes
+**Currency:** yes (tip amount display)
+**Note:** This screen is reached from both account dashboard and post-lesson email link (UC-007 email link alternate flow). Deep-link from email must authenticate user before rendering.
+
 ### Customer / Account — Settings
 **Route:** /account/settings
 **UC:** UC-022
@@ -98,13 +108,14 @@
 ### Instructor / Home — Today's Schedule
 **Route:** /schedule/today
 **UC:** UC-009, UC-011, UC-012, UC-013
-**Elements:** lesson card list, student name, skill level badge, lesson type label, meeting point, check-in CTA, no-show CTA, complete CTA, cancel CTA (own lessons per OQ-058)
-**States:** empty, loading, checked-in, no-show, completed
+**Elements:** lesson card list, student name, skill level badge, lesson type label, meeting point, check-in CTA, no-show CTA, complete CTA, cancel CTA (own lessons per OQ-058), auto-complete notice badge
+**States:** empty, loading, checked-in, no-show, completed, auto-completed (system-completed — visual distinction for instructor awareness)
 **Breakpoint:** mobile
 **i18n:** yes
 **Currency:** no
 **Note (OQ-055):** Booking cards show status = confirmed only. No in_progress state displayed.
 **Note (OQ-058):** Cancel CTA present on instructor's own lesson cards.
+**Note (decisions.md 2026-03-29):** Auto-completed bookings show a badge indicating system completion at +2h; distinct from instructor-marked complete.
 
 ### Instructor / Check-In
 **Route:** /schedule/:bookingId/checkin
@@ -234,6 +245,12 @@
 **UC:** UC-007
 **Variants:** star-only, star-with-comment
 
+### TipForm
+**Surfaces:** customer
+**UC:** UC-007
+**Variants:** card-on-file (one-click), new-card-entry
+**Note:** Conditional component — rendered only if tip feature is retained after OQ-043 conflict resolution. Separate from RatingForm; rendered below rating after rating is submitted.
+
 ### CertificationExpiryBadge
 **Surfaces:** admin
 **UC:** UC-020
@@ -272,11 +289,12 @@
 
 ## Asset Checklist
 
-- [ ] Screens: 9 (customer app)
+- [ ] Screens: 10 (customer app — +1 post-lesson review screen)
 - [ ] Screens: 4 (instructor PWA)
 - [ ] Screens: 6 (admin app)
-- [ ] Shared components: 10
-- [ ] Email templates: 5 EN + 5 FR (booking confirmation, cancellation, instructor change, no-show alert, post-lesson review prompt)
+- [ ] Shared components: 11 (+1 TipForm — conditional on OQ-043 resolution)
+- [ ] Icons: 8 (star-filled, star-empty, check-in, no-show, cancel, complete, expiry-warning, expiry-critical)
+- [ ] Email templates: 6 EN + 6 FR (booking confirmation, cancellation, instructor change, no-show alert, post-lesson review prompt, 24h reminder)
 - [ ] SMS templates: 2 EN + 2 FR (booking confirmation, cancellation)
 - [ ] Empty state illustrations: 3 (no lessons today — instructor, no bookings — customer, no results — admin)
 - [ ] Processor JS SDK integration: 2 (Stripe Elements, Shift4 embed)

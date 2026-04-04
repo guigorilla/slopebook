@@ -1,20 +1,59 @@
 # Slopebook — Open Questions
 
-**Document Status:** Draft — Review Pipeline Run 9
+**Document Status:** Draft — Review Pipeline Run 8
 **Last Updated:** 2026-04-04
-**Active open questions:** 5
-**Total resolved:** 62 (OQ-001 through OQ-066, excluding OQ-062 through OQ-066 which remain active)
+**Active open questions:** 7
+**Total resolved:** 60 (OQ-001 through OQ-058, OQ-060, and OQ-059 partially)
 
 ---
 
 ## This Run
-- Added: 0 new questions
-- Resolved: 2 questions (OQ-059 — nullable bookingId approach confirmed; OQ-061 — tips in scope confirmed)
-- Cleaned up: OQ-063 block had tip resolution text misplaced there from Run 8 manual edit; moved to OQ-061 resolution; OQ-063 real-time push question remains unresolved
+- Added: 6 new questions (OQ-061 to OQ-066)
+- Resolved: 1 question (OQ-060 — auto-completion confirmed in decisions.md 2026-03-29 and implemented in TR-013a)
+- Stale: 1 question (OQ-059 — resolution in Run 7 conflicts with decisions.md 2026-03-29; needs human confirmation)
 
 ---
 
 ## Active Open Questions
+
+---
+
+### OQ-059 — Payment.bookingId constraint vs P1 package purchases ⚠️ Stale — blocking UC-024, data-model-proposed.md
+
+**Status:** Resolved
+**Raised:** 2026-03-29
+**Source:** critique-proposed.md (Run 7 CR-003), data-model.md Payment entity
+**Blocks:** UC-024 (P1), data-model-proposed.md adoption
+
+**Question:** The Run 7 open-questions-proposed.md recorded this decision: "Introduce a separate `PackagePayment` entity to avoid coupling package and booking payment flows." However, decisions.md 2026-03-29 resolves this differently: "`Payment.bookingId` is nullable... `Payment` adds a `lessonPackageId` FK... A payment links to either a booking or a package purchase — never both." These two resolutions are mutually exclusive. data-model-proposed.md (Run 8) implements the decisions.md approach (nullable bookingId + lessonPackageId FK). Which resolution is authoritative?
+
+**Why it matters:** The two approaches have different implementation costs and API shapes. The decisions.md approach is already in data-model-proposed.md. The PackagePayment entity approach requires a separate entity and separate endpoints. Confirming before development begins avoids rework.
+
+**Options:**
+1. **decisions.md approach (currently implemented in data-model-proposed.md):** `Payment.bookingId` nullable; add `Payment.lessonPackageId` FK; keep single Payment entity; new `paymentType` discriminator field added in Run 8 to distinguish payment kinds
+2. **OQ-059 Run 7 resolution:** Introduce separate `PackagePayment` entity; keep `Payment.bookingId IS NOT NULL` constraint; separate billing flow for packages
+
+**Recommended action:** Confirm which approach by adding an explicit decisions.md entry. If option 1, close OQ-059. If option 2, revert data-model-proposed.md changes and define PackagePayment.
+
+**Decision:** nullable bookingId + lessonPackageId FK on Payment entity. 
+No separate PackagePayment entity. decisions.md 2026-03-29 is authoritative.
+**Date:** 2026-04-04
+---
+
+### OQ-061 — Tips: OQ-043 resolution conflicts with decisions.md
+
+**Status:** Unresolved
+**Raised:** 2026-04-04
+**Source:** generate-summary-proposed.md (Run 8), critique-proposed.md (Run 8 CR-003 context), use-cases-p0-proposed.md UC-007
+**Blocks:** UC-007 steps 4–5, Payment.paymentType = 'tip', api-design-proposed.md POST /api/v1/bookings/:id/tip, uc-registry item `[ ] Student submits tip`
+
+**Question:** OQ-043 (resolved 2026-03-27): "No tips. Payment.tipAmountCents and Tenant.tipsEnabled removed." decisions.md (2026-03-26 and 2026-03-29): "The post-lesson flow includes: rating (required) + tip (optional). Tips are a separate payment transaction." These directly conflict. UC-007 (Run 8) includes tip steps to avoid a uc-validator FAIL, but the data-model.md has no tip-related fields. Run 8 data-model-proposed.md added `Payment.paymentType = 'tip'` provisionally.
+
+**Why it matters:** If tips are dropped: remove UC-007 steps 4–5, remove `paymentType = 'tip'`, remove `POST /api/v1/bookings/:id/tip`, mark uc-registry item `[>] DEFERRED`, update decisions.md 2026-03-26 and 2026-03-29 entries. If tips are retained: confirm schema (Payment.paymentType covers it), confirm separate payment endpoint, and update decisions.md to reflect OQ-043 was superseded.
+
+**Options:**
+1. Tips removed: Follow OQ-043. Remove all tip-related content. Mark uc-registry `[>] DEFERRED v1.5`.
+2. Tips retained: Follow decisions.md. Keep UC-007 steps 4–5. Add `Payment.paymentType enum`. Ship `POST /api/v1/bookings/:id/tip` endpoint.
 
 ---
 
@@ -38,7 +77,6 @@
 
 ### OQ-063 — Real-time push mechanism for Admin Schedule View
 
-**Status:** Unresolved
 **Raised:** 2026-04-04
 **Source:** tech-requirements-proposed.md TR-014 (gap #8)
 **Blocks:** TR-014, admin/Schedule View screen (UC-014), asset-list-proposed.md Admin / Schedule View
@@ -51,6 +89,11 @@
 1. Server-Sent Events (SSE): stateless server side; works through HTTP/2; simple client implementation
 2. WebSocket: bidirectional; more complex infrastructure; more appropriate if instructors also need push (e.g. new booking notifications)
 3. Polling: simplest; 5–30s interval; acceptable latency for admin use case; no infrastructure change needed
+
+**Status:** Resolved
+**Decision:** decisions.md 2026-03-29 takes precedence. Tips are in scope
+as optional post-lesson flow. OQ-043 superseded. OQ-061 closed by same decision.
+**Date:** 2026-04-04
 
 ---
 
@@ -97,7 +140,7 @@
 **Source:** api-design-proposed.md — Booking Engine; critique-proposed.md (Run 8, Significant Gaps)
 **Blocks:** TR-015, api-design-proposed.md PATCH /api/v1/bookings/:id/reassign
 
-**Question:** api-design-proposed.md adds `PATCH /api/v1/bookings/:id/reassign` but documents no request payload and no response payload. At minimum `instructorId` is required. Should it also accept `reason` (for audit log) and/or `notifyStudent: boolean`? What does the response contain?
+**Question:** api-design-proposed.md adds `PATCH /api/v1/bookings/:id/reassign` but documents no request payload. What fields does this endpoint accept? At minimum `instructorId` is required. Should it also accept `reason` (for audit log) and/or `notifyStudent: boolean`?
 
 **Why it matters:** Without a documented payload, the endpoint cannot be implemented. The audit log entry for a reassignment should capture who the booking was moved from and why — this may require additional fields not in the current Booking entity.
 
@@ -129,7 +172,7 @@
 | OQ-015 | InstructorTenant earnings visibility | Full tenant isolation. No cross-tenant visibility. | 2026-03-26 |
 | OQ-016 | Notification provider | SendGrid for email. CASL opt-out via suppression list. | 2026-03-26 |
 | OQ-017 | Electronic waiver storage layer | Smartwaiver. Learner.waiverSignedAt, waiverVersion, waiverToken. | 2026-03-26 |
-| OQ-018 | Tips scope | No tips in booking payload. Superseded by OQ-043 and OQ-061. | 2026-03-26 |
+| OQ-018 | Tips scope | No tips. Superseded by OQ-043. | 2026-03-26 |
 | OQ-019 | Lesson packages | Confirmed Beta deliverable. LessonPackage and PackageRedemption entities. | 2026-03-26 |
 | OQ-020 | Skill level: self-reported or validated | Self-reported. Admin override audited via AuditLog. | 2026-03-26 |
 | OQ-021 | Google Calendar sync | Deferred to v1.5. OAuthToken entity removed from v1.0 schema. | 2026-03-26 |
@@ -154,7 +197,7 @@
 | OQ-040 | Smartwaiver API Outage at Check-In | Typed-name fallback (deferred with Smartwaiver integration per OQ-052). | 2026-03-28 |
 | OQ-041 | Cross-Tenant Instructor Double-Booking | No cross-tenant conflict detection in v1.0. | 2026-03-28 |
 | OQ-042 | Pricing Floors and Seasonal Rate Cards | Out of scope for v1.0 GA. UC-042 removed. | 2026-03-28 |
-| OQ-043 | Tips | No tips in booking payload (superseded — tips are now in scope as post-lesson optional payment per OQ-061 / decisions.md 2026-04-04). | 2026-03-27 |
+| OQ-043 | Tips | No tips. Payment.tipAmountCents and Tenant.tipsEnabled removed. | 2026-03-27 |
 | OQ-044 | CASL Classification of Weather Emails | Transactional; no CASL commercial classification. | 2026-03-28 |
 | OQ-045 | Smartwaiver Document Deletion (Right-to-Erasure) | Not in scope for v1.0. | 2026-03-28 |
 | OQ-046 | processorTokenId PCI-DSS Protection | Must be encrypted at rest via AWS KMS envelope encryption. | 2026-03-28 |
@@ -170,6 +213,4 @@
 | OQ-056 | Payment Void Failure: Compensation State Policy | 4 void retries at 100ms intervals. If all fail, silently set Payment.status = void_pending for ops review. | 2026-03-29 |
 | OQ-057 | GuestCheckout Language Collection: Required Field or Default? | UI language selector defaults to browser geolocation. User's browser language matches their transaction language. | 2026-03-29 |
 | OQ-058 | Instructor-Initiated Booking Cancellation | Instructors have admin-level access to their own lessons and can cancel them directly. | 2026-03-29 |
-| OQ-059 | Payment.bookingId constraint vs P1 package purchases | nullable bookingId + lessonPackageId FK on Payment entity. No separate PackagePayment entity. decisions.md 2026-03-29 and 2026-04-04 authoritative. data-model-proposed.md v0.6 implementation confirmed. | 2026-04-04 |
 | OQ-060 | Booking auto-completion: fallback if instructor never marks complete | Auto-complete via scheduled job at endAt + 2 hours. booking.completed event fires; earnings calculated; review email sent. | 2026-03-29 |
-| OQ-061 | Tips: OQ-043 resolution conflicts with decisions.md | Tips are in scope for v1.0 as optional post-lesson payment. decisions.md 2026-04-04 is authoritative. OQ-043 superseded. Payment.paymentType = 'tip' confirmed. POST /api/v1/bookings/:id/tip confirmed. Unique partial index on (bookingId, paymentType) WHERE paymentType = 'tip' added in data-model-proposed.md v0.7. | 2026-04-04 |
