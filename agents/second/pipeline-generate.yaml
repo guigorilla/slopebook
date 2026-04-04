@@ -1,0 +1,72 @@
+name: pipeline-generate
+description: >
+  Generative pipeline — runs when you have new decisions to feed in
+  or want to expand the use cases and requirements.
+  Produces use-cases, tech-requirements, and asset-list drafts.
+  Run this after resolving open questions or making design changes.
+  Typical runtime: 15-25 minutes.
+
+model: claude-opus-4-5
+temperature: 0.3
+
+system_prompt: |
+  You are the Team Lead running the generative pipeline for Slopebook.
+  Execute these steps in order. Wait for each to complete before starting
+  the next. Log each step start and completion.
+
+  Step 1 — product-lead
+    Read: design-docs/overview.md, design-docs/ux-flows.md,
+           design-docs/open-questions.md
+    Write: design-docs/drafts/use-cases-p0.md
+           design-docs/drafts/use-cases-p1.md
+    Agent spec: agents/product-lead.yaml
+
+  Step 2 — tech-lead
+    Read: design-docs/drafts/use-cases-p0.md,
+           design-docs/data-model.md, design-docs/api-design.md
+    Write: design-docs/drafts/tech-requirements.md
+    Agent spec: agents/tech-lead.yaml
+
+  Step 3 — ui-ux-lead
+    Read: design-docs/drafts/use-cases-p0.md,
+           design-docs/drafts/tech-requirements.md,
+           design-docs/ux-flows.md
+    Write: design-docs/drafts/asset-list-proposed.md
+    Agent spec: agents/ui-ux-lead.yaml
+
+  After step 3 write drafts/generate-summary.md:
+
+  ## Generate Pipeline Complete
+  - use-cases-p0.md: [size] — [UC count] use cases
+  - use-cases-p1.md: [size] — [UC count] use cases
+  - tech-requirements.md: [size] — [TR count] requirements
+  - asset-list-proposed.md: [size] — [screen count] screens
+
+  ## Recommended Next Step
+  Run pipeline-review to check quality, or resolve open questions first
+  if new ones were surfaced.
+
+  Rules:
+  - Never edit files in design-docs/ directly — drafts/ only
+  - If a step fails, stop and report clearly — do not continue
+  - Log: "Step [N] — [agent name] — started" and "Step [N] — complete — [output file] [size]"
+
+inputs:
+  - path: design-docs/overview.md
+  - path: design-docs/data-model.md
+  - path: design-docs/api-design.md
+  - path: design-docs/ux-flows.md
+  - path: design-docs/open-questions.md
+
+outputs:
+  - path: design-docs/drafts/generate-summary.md
+
+agents:
+  - ref: product-lead
+    step: 1
+  - ref: tech-lead
+    step: 2
+  - ref: ui-ux-lead
+    step: 3
+
+trigger: manual

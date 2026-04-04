@@ -1,7 +1,7 @@
 # Slopebook — Use Cases (P0)
 
-**Document Status:** Draft — Generate Pipeline Run 6
-**Last Updated:** 2026-03-28
+**Document Status:** Draft — Generate Pipeline Run 7
+**Last Updated:** 2026-03-29
 **Author:** Product-Lead Agent
 **Scope:** P0 (Alpha — Q2 2026) use cases only
 
@@ -45,11 +45,11 @@
 - Guest has selected lesson type, instructor, and time slot (UC-001).
 
 **Main Flow:**
-1. Guest is prompted to enter age and skill level before slots are shown
-2. System filters available slots to instructors eligible for that age and skill level
-3. Guest selects a lesson type from the filtered catalog
-4. Guest picks a date from the availability calendar
-5. Guest selects a time slot and instructor from filtered results
+1. Guest confirms booking summary (lesson details, instructor, price in resort currency).
+2. System creates a SlotReservation with expiresAt = now + 15 minutes and status = active.
+3. System returns sessionToken for use through the rest of checkout.
+4. Visible countdown timer activates in the booking widget UI.
+5. Guest proceeds to authentication gate (UC-003 or UC-004).
 
 **Alternate Flows:**
 - Slot taken before SlotReservation created → BOOKING_CONFLICT error; guest returns to slot selection.
@@ -59,31 +59,39 @@
 - Countdown timer is visible throughout remaining checkout steps.
 
 **Priority:** P0
+**Note (OQ-011):** Soft-hold TTL is 15 minutes, platform constant.
 
 ---
 
-## UC-003 — Browse and select available lesson slots
-**Persona:** Guest
-**Goal:** Find an available lesson slot matched to age and skill level
+## UC-003 — Guest checkout booking
+
+**Persona:** Guest (no account)
+**Goal:** Complete a booking without creating an account.
 **Preconditions:**
-- Guest has selected a lesson type
-- Lesson catalog is available for the tenant
+- Active SlotReservation exists (UC-002).
+- Guest has not signed in.
 
 **Main Flow:**
-1. Guest reviews booking summary including lesson type, instructor, date, time, age and skill level
-2. Guest selects payment method (card-on-file or new card)
-3. Guest completes payment
-4. System confirms booking and sends confirmation email
-5. Guest is prompted to create an account with learner profile pre-populated from booking data
-6. Guest accepts or skips account creation
+1. Guest selects "Guest checkout" at the authentication gate.
+2. Guest enters: first name, last name, email, optional phone, learnerDateOfBirth (required), skillLevel (required), preferredLanguage (defaults to browser geolocation per OQ-057).
+3. System validates: age ≥ 5 (OQ-007); if age < 5 → AGE_TOO_YOUNG error, booking blocked.
+4. If age < 18 → parental consent checkbox is shown and must be checked to continue (OQ-032).
+5. System creates GuestCheckout record with all collected fields.
+6. Guest enters payment details via processor JS SDK; card is not saved.
+7. System captures payment via Payment Service (Stripe or Shift4 per tenant processor).
+8. If booking DB write fails: retry DB write up to 3 times using captured payment (OQ-053); on 3rd failure, initiate void with 4 retries at 100ms intervals; if void fails after all retries, silently set Payment.status = void_pending (OQ-056).
+9. On success: Booking confirmed with status = confirmed.
+10. Confirmation email + SMS sent in guest's preferredLanguage; .ics calendar attachment included.
+11. Confirmation screen shown with booking reference; guest-checkout users see ContactSchoolCard (OQ-033).
 
 **Alternate Flows:**
-- Guest skips account creation → confirmation sent to email only, no profile saved
-- Guest creates account → learner sub-profile pre-filled with age, skill level, and booking history
+- Payment declined → guest sees PAYMENT_FAILED error; slot hold remains active if TTL not expired.
+- SlotReservation expired before payment → HOLD_EXPIRED; guest returns to slot selection.
+- Email already used for existing account → prompt to sign in.
 
 **Postconditions:**
-- Booking confirmed and payment captured
-- If account created: learner profile exists with age and skill level pre-filled
+- Booking.status = confirmed; GuestCheckout record exists with parentalConsentGiven if minor.
+- No self-service cancel available for guest-checkout users (OQ-033).
 
 **Priority:** P0
 
@@ -104,7 +112,7 @@
 4. User selects payment method (card-on-file or enters new card).
 5. New card optionally saved as PaymentMethod on the Household.
 6. System captures payment via Payment Service.
-7. If booking DB write fails: retry DB write up to 3 times using captured payment (OQ-053); on 3rd failure, void payment and return BOOKING_FAILED.
+7. If booking DB write fails: retry DB write up to 3 times using captured payment (OQ-053); on 3rd failure, initiate void with 4 retries at 100ms intervals; if void fails after all retries, silently set Payment.status = void_pending (OQ-056).
 8. On success: Booking confirmed; cancel CTA available in account dashboard.
 9. Confirmation email + SMS sent; .ics included.
 
@@ -129,7 +137,7 @@
 
 **Main Flow:**
 1. Guest selects "Create account" at the authentication gate or from the main nav.
-2. Guest enters email, password, phone (optional), preferredLanguage, dateOfBirth (required), skillLevel (required).
+2. Guest enters email, password, phone (optional), preferredLanguage (defaults to browser geolocation per OQ-057), dateOfBirth (required), skillLevel (required).
 3. System validates: age ≥ 5 (OQ-007); if age < 18 → parental consent checkbox required (OQ-032).
 4. System creates User, Household, and a self-Learner sub-profile from the registration data (OQ-048).
 5. If registration occurs during active slot hold: countdown timer continues to be visible (OQ-037); slot is not extended.
@@ -149,11 +157,12 @@
 
 ## UC-006 — Cancel a booking
 
-**Persona:** Guest (signed-in) / Head of Household / School Admin
+**Persona:** Guest (signed-in) / Head of Household / School Admin / Instructor (own lessons per OQ-058)
 **Goal:** Cancel a confirmed upcoming booking and receive applicable refund.
 **Preconditions:**
 - Booking.status = confirmed.
 - For customer path: user is authenticated and Booking.learnerId is in their Household.
+- For instructor path: instructor has admin-level access to their own bookings (OQ-058).
 
 **Main Flow:**
 1. User selects a booking in their account dashboard and taps cancel.
@@ -165,6 +174,7 @@
 
 **Alternate Flows:**
 - Admin cancels on behalf of customer → admin uses booking management screen; same flow.
+- Instructor cancels own lesson → treated as admin-level cancellation; student notified; admin alerted.
 - Guest-checkout user → no self-service cancel; Confirmation screen shows ContactSchoolCard with school email and phone (OQ-033).
 
 **Postconditions:**
@@ -196,6 +206,7 @@
 - One InstructorRating per Booking (unique constraint enforced).
 
 **Priority:** P0
+**Note (OQ-028):** Ratings are internal-only within tenant; no public-facing display.
 
 ---
 
@@ -234,7 +245,7 @@
 
 **Main Flow:**
 1. Instructor opens Today's Schedule screen.
-2. System returns all Bookings for today where Booking.instructorId matches and status ∈ {confirmed, in_progress}.
+2. System returns all Bookings for today where Booking.instructorId matches and status = confirmed.
 3. Each lesson card shows: student name, skill level, lesson type, meeting point, lesson time.
 4. Instructor taps a card to see full student details and prior session notes.
 
@@ -245,6 +256,7 @@
 - No state change; read-only view.
 
 **Priority:** P0
+**Note (OQ-055):** `in_progress` status removed from Booking enum; schedule shows only confirmed bookings.
 **Note (OQ-050):** Instructor receives email notification on new booking assignment; not required for P0.
 
 ---
@@ -254,23 +266,24 @@
 **Persona:** Instructor
 **Goal:** Confirm student has arrived and is ready for their lesson.
 **Preconditions:**
-- Booking.status = confirmed or in_progress.
+- Booking.status = confirmed.
 - Instructor is signed in.
 
 **Main Flow:**
 1. Instructor opens the booking from Today's Schedule and taps Check In.
 2. System displays student details: name, dateOfBirth, skill level, parental consent indicator (if minor).
 3. Instructor confirms student identity and taps Confirm Check-In.
-4. System sets Booking.checkedInAt = now; Booking.status remains confirmed.
+4. System sets Booking.checkedInAt = now; status remains confirmed.
 
 **Alternate Flows:**
 - Student not present → instructor marks no-show instead (UC-011).
 
 **Postconditions:**
-- Booking.checkedInAt is set; student is checked in.
+- Booking.checkedInAt is set; Booking.status remains confirmed.
 
 **Priority:** P0
-**Note (OQ-052):** Smartwaiver embed integration deferred to a later phase. Waiver assumed completed. No waiverToken generation or embed in P0 check-in flow.
+**Note (OQ-052):** Smartwaiver embed integration deferred to a later phase. Waiver assumed completed for P0. No waiverToken generation or embed in P0 check-in flow.
+**Note (OQ-055):** Booking.status = in_progress removed from enum. Check-in sets checkedInAt only; status transitions directly from confirmed to completed or no_show.
 
 ---
 
@@ -301,7 +314,7 @@
 **Persona:** Instructor
 **Goal:** Record progress notes for a student after their lesson.
 **Preconditions:**
-- Booking.status = in_progress or completed.
+- Booking.status = confirmed or completed.
 - Instructor is signed in.
 
 **Main Flow:**
@@ -316,6 +329,7 @@
 - BookingNote created; if isSharedWithGuest = true, visible in customer's booking detail.
 
 **Priority:** P0
+**Note (OQ-055):** Precondition updated: in_progress removed; notes can be added on confirmed or completed bookings.
 
 ---
 
@@ -324,7 +338,7 @@
 **Persona:** Instructor
 **Goal:** Close out a lesson after it has concluded.
 **Preconditions:**
-- Booking.status = in_progress or confirmed; lesson end time has passed.
+- Booking.status = confirmed; lesson end time has passed.
 
 **Main Flow:**
 1. Instructor taps Complete on a booking card.
@@ -335,6 +349,7 @@
 - Booking.status = completed; student can now submit a rating (UC-007).
 
 **Priority:** P0
+**Note (OQ-055):** Transition is confirmed → completed directly. in_progress status is not used.
 
 ---
 
@@ -373,7 +388,7 @@
 1. Admin drags a booking card to a different instructor on the schedule (or uses reassign modal).
 2. System checks for BOOKING_CONFLICT on the target instructor.
 3. System updates Booking.instructorId; previous instructor's slot is freed.
-4. Notification email sent to student (instructor change); notification to new instructor (OQ-050: not P0 for instructor notification).
+4. Notification email sent to student (instructor change); notification to new instructor (OQ-050: not required for P0).
 
 **Alternate Flows:**
 - Target instructor already booked at that time → BOOKING_CONFLICT; drag reverted.
@@ -452,6 +467,7 @@
 - CancellationPolicy saved; can be attached to LessonTypes.
 
 **Priority:** P0
+**Note (OQ-014):** Default non-refundable policy seeded atomically at tenant creation.
 
 ---
 
@@ -511,17 +527,21 @@
 
 **Main Flow:**
 1. Admin opens Booking Management and selects Create Booking.
-2. Admin selects lesson type, instructor, date/time, and enters customer details (or selects existing Learner).
-3. Admin selects or enters payment method; system captures payment.
-4. System creates Booking with standard confirmation flow.
+2. Admin selects lesson type, instructor, date/time.
+3. For existing customer: admin searches and selects the customer's Learner record.
+4. For walk-up customer with no account: admin creates a new User account and Learner profile on their behalf (OQ-054).
+5. Admin selects or enters payment method; system captures payment.
+6. System creates Booking linked to the Learner; CHECK constraint `(learnerId IS NOT NULL)` satisfied.
 
 **Alternate Flows:**
 - No availability for requested slot → admin checks schedule view and selects alternate.
 
 **Postconditions:**
-- Booking confirmed; confirmation sent to customer if email provided.
+- Booking confirmed; confirmation sent to customer's email.
+- Walk-up customer now has a full account and booking history from first visit.
 
 **Priority:** P0
+**Note (OQ-054):** Admin creates a full User + Learner record for walk-up customers rather than using GuestCheckout. Walk-up customers get full accounts.
 
 ---
 
@@ -542,7 +562,7 @@
 - User.preferredLanguage updated; UI and communications reflect new language.
 
 **Priority:** P0
-**Note (OQ-030):** FR language available on all subscription tiers including Starter.
+**Note (OQ-030):** FR language available on all subscription tiers including Starter. No tier-based suppression required.
 
 ---
 
@@ -551,4 +571,4 @@
 - `ux-flows.md §3 Instructor App` — "Sync with Google Calendar (optional)" listed under Availability Management; deferred to v1.5 (OQ-021); no UC defined for P0 or P1
 - `ux-flows.md §3 Instructor App` — "Tips (if applicable)" listed in Earnings Dashboard; removed from all plans (OQ-043); no UC
 - `ux-flows.md §5 Operator Portal` — "Pricing floors and seasonal rate cards" listed; removed from v1.0 scope (OQ-042)
-- `ux-flows.md §1 Customer` — "Select learner (if household account)" step has no P0 screen for adding a new learner mid-checkout; deferred to P1 household management
+- `ux-flows.md §1 Customer` — "Select learner (if household account)" step has no P0 screen for adding a new learner mid-checkout; deferred to P1 household management (UC-023)

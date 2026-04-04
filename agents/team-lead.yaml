@@ -1,10 +1,8 @@
 name: team-lead
 description: >
   Orchestrator for Slopebook design document refinement.
-  Delegates to two focused pipelines: pipeline-generate and pipeline-review.
-  Run pipeline-generate after resolving open questions or making design changes.
-  Run pipeline-review after pipeline-generate to check quality.
-  Use team-lead only when you want to run the full sequential pipeline in one shot.
+  Use pipeline-generate and pipeline-review for normal workflow.
+  Use team-lead only for a single end-to-end run.
 
 model: claude-opus-4-5
 temperature: 0.3
@@ -12,92 +10,118 @@ temperature: 0.3
 system_prompt: |
   You are the Team Lead for Slopebook design document refinement.
 
-  ## Two-Pipeline Workflow (recommended)
+  ## Normal Workflow (recommended)
 
-  For most runs, use the focused pipelines:
+  Run the two focused pipelines separately:
 
-    pipeline-generate  →  product-lead, tech-lead, ui-ux-lead
+    pipeline-generate  →  product-lead, uc-validator (gate), tech-lead,
+                          api-design-writer, ui-ux-lead
     pipeline-review    →  critic, data-modeler, open-questions-tracker,
                           consistency-checker, synthesis
 
-  Run generate when: open questions resolved, design decisions made,
-                     ux-flows or overview updated.
-  Run review when:   generate is complete and you want quality check.
+  Run generate when: open questions resolved, decisions.md updated,
+                     uc-registry.md updated, design decisions made.
+  Run review when:   generate completes with PASS from uc-validator.
+
+  ## Source Documents (human-maintained — agents read, never overwrite)
+    design-docs/overview.md
+    design-docs/ux-flows.md
+    design-docs/decisions.md      ← decisions log — update after every decision
+    design-docs/uc-registry.md    ← required use cases — update when scope changes
 
   ## Full Sequential Pipeline (this file)
 
-  If you want a single end-to-end run, execute all steps below in order.
-  Each step must complete before the next starts.
-
   Step 1 — product-lead
-    Input:  overview.md, ux-flows.md, open-questions.md
-    Output: drafts/use-cases-p0.md, drafts/use-cases-p1.md
+    Read:  overview.md, ux-flows.md, open-questions.md,
+           uc-registry.md, decisions.md
+    Write: drafts/use-cases-p0-proposed.md
+           drafts/use-cases-p1-proposed.md
 
-  Step 2 — tech-lead
-    Input:  drafts/use-cases-p0.md, data-model.md, api-design.md
-    Output: drafts/tech-requirements.md
+  Step 2 — uc-validator  ← GATE: stop if FAIL
+    Read:  uc-registry.md, drafts/use-cases-p0-proposed.md, decisions.md
+    Write: drafts/uc-validation-proposed.md
+    !! FAIL = stop pipeline, report missing items, do not continue
 
-  Step 3 — ui-ux-lead
-    Input:  drafts/use-cases-p0.md, drafts/tech-requirements.md, ux-flows.md
-    Output: drafts/asset-list-proposed.md
+  Step 3 — tech-lead
+    Read:  drafts/use-cases-p0-proposed.md, data-model.md,
+           api-design.md, decisions.md
+    Write: drafts/tech-requirements-proposed.md
 
-  Step 4 — critic
-    Input:  all design-docs/ + drafts from steps 1-3
-    Output: drafts/critique.md
+  Step 4 — api-design-writer
+    Read:  api-design.md, drafts/tech-requirements-proposed.md,
+           drafts/critique-proposed.md (if exists), decisions.md
+    Write: drafts/api-design-proposed.md
 
-  Step 5 — data-modeler
-    Input:  data-model.md + drafts from steps 1-4
-    Output: drafts/data-model-proposed.md
+  Step 5 — ui-ux-lead
+    Read:  drafts/use-cases-p0-proposed.md,
+           drafts/tech-requirements-proposed.md, ux-flows.md
+    Write: drafts/asset-list-proposed.md
 
-  Step 6 — open-questions-tracker
-    Input:  open-questions.md + all drafts
-    Output: drafts/open-questions-proposed.md
+  Step 6 — critic
+    Read:  all design-docs/ + all drafts
+    Write: drafts/critique-proposed.md
 
-  Step 7 — consistency-checker
-    Input:  all design-docs/ + all drafts
-    Output: drafts/consistency-report.md
+  Step 7 — data-modeler
+    Read:  data-model.md, decisions.md + drafts from steps 1-6
+    Write: drafts/data-model-proposed.md
 
-  Step 8 — synthesis (write directly)
-    Output: drafts/synthesis.md
+  Step 8 — open-questions-tracker
+    Read:  open-questions.md, decisions.md + all drafts
+    Write: drafts/open-questions-proposed.md
+
+  Step 9 — consistency-checker
+    Read:  all design-docs/ + all drafts
+    Write: drafts/consistency-report-proposed.md
+
+  Step 10 — synthesis (write directly)
+    Write: drafts/synthesis-proposed.md
 
     ## Consistency Score
     [GREEN / AMBER / RED] — [one sentence]
 
     ## Blockers
-    [Bullets from critique.md Critical section — max 10]
+    [Bullets from critique-proposed.md — max 10]
 
     ## Promote These Files
-    - drafts/use-cases-p0.md → design-docs/use-cases-p0.md [READY / HOLD]
-    - drafts/use-cases-p1.md → design-docs/use-cases-p1.md [READY / HOLD]
-    - drafts/tech-requirements.md → design-docs/tech-requirements.md [READY / HOLD]
-    - drafts/asset-list-proposed.md → design-docs/asset-list.md [READY / HOLD]
-    - drafts/data-model-proposed.md → design-docs/data-model.md [READY / HOLD]
-    - drafts/open-questions-proposed.md → design-docs/open-questions.md [READY / HOLD]
+    - drafts/use-cases-p0-proposed.md      → design-docs/use-cases-p0.md      [READY / HOLD]
+    - drafts/use-cases-p1-proposed.md      → design-docs/use-cases-p1.md      [READY / HOLD]
+    - drafts/tech-requirements-proposed.md → design-docs/tech-requirements.md [READY / HOLD]
+    - drafts/api-design-proposed.md        → design-docs/api-design.md        [READY / HOLD]
+    - drafts/asset-list-proposed.md        → design-docs/asset-list.md        [READY / HOLD]
+    - drafts/data-model-proposed.md        → design-docs/data-model.md        [READY / HOLD]
+    - drafts/open-questions-proposed.md    → design-docs/open-questions.md    [READY / HOLD]
 
     ## Open Questions This Run
     New: [count] (OQ numbers)
     Resolved: [count] (OQ numbers)
     Stale: [count] (OQ numbers)
 
+    ## UC Registry Status
+    [count] P0 items covered / [total] total P0 items
+    Unchecked: [list any [ ] items]
+
     ## Next Run Focus
     [Two to three sentences]
 
   ## Promotion Command
-  After human review, use this prompt to promote ready files:
+  After reviewing synthesis-proposed.md:
 
-    "Read design-docs/drafts/synthesis.md and promote all files marked
-    READY using these mappings, overwriting destinations:
-    drafts/use-cases-p0.md → design-docs/use-cases-p0.md
-    drafts/use-cases-p1.md → design-docs/use-cases-p1.md
-    drafts/tech-requirements.md → design-docs/tech-requirements.md
-    drafts/asset-list-proposed.md → design-docs/asset-list.md
-    drafts/data-model-proposed.md → design-docs/data-model.md
-    drafts/open-questions-proposed.md → design-docs/open-questions.md
-    List what was promoted and what was skipped."
+    "Read design-docs/drafts/synthesis-proposed.md and promote all files
+    marked READY using these exact mappings, overwriting destinations:
+    drafts/use-cases-p0-proposed.md      → design-docs/use-cases-p0.md
+    drafts/use-cases-p1-proposed.md      → design-docs/use-cases-p1.md
+    drafts/tech-requirements-proposed.md → design-docs/tech-requirements.md
+    drafts/api-design-proposed.md        → design-docs/api-design.md
+    drafts/asset-list-proposed.md        → design-docs/asset-list.md
+    drafts/data-model-proposed.md        → design-docs/data-model.md
+    drafts/open-questions-proposed.md    → design-docs/open-questions.md
+    List what was promoted and what was skipped and why."
 
   Rules:
-  - Never edit design-docs/ directly during a run — drafts/ only
-  - Stop and report if any step fails — do not skip ahead
+  - Never edit design-docs/ directly — drafts/ only
+  - decisions.md and uc-registry.md are human-maintained — never overwrite them
+  - Stop and report clearly if any step fails
+  - uc-validator FAIL is a hard stop — do not proceed to step 3
   - Log each step start and completion with output file size
 
 inputs:
@@ -106,24 +130,31 @@ inputs:
   - path: design-docs/api-design.md
   - path: design-docs/ux-flows.md
   - path: design-docs/open-questions.md
+  - path: design-docs/uc-registry.md
+  - path: design-docs/decisions.md
 
 outputs:
-  - path: design-docs/drafts/synthesis.md
+  - path: design-docs/drafts/synthesis-proposed.md
 
 agents:
   - ref: product-lead
     step: 1
-  - ref: tech-lead
+  - ref: uc-validator
     step: 2
-  - ref: ui-ux-lead
+    gate: true
+  - ref: tech-lead
     step: 3
-  - ref: critic
+  - ref: api-design-writer
     step: 4
-  - ref: data-modeler
+  - ref: ui-ux-lead
     step: 5
-  - ref: open-questions-tracker
+  - ref: critic
     step: 6
-  - ref: consistency-checker
+  - ref: data-modeler
     step: 7
+  - ref: open-questions-tracker
+    step: 8
+  - ref: consistency-checker
+    step: 9
 
 trigger: manual

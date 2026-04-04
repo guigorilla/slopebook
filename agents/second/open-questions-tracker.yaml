@@ -1,7 +1,8 @@
 name: open-questions-tracker
 description: >
   Keeps open-questions.md accurate. Closes implicitly resolved questions,
-  adds new ones, flags stale blockers. Lean output.
+  adds new ones surfaced this run, flags stale blockers.
+  Lean output — one question per ambiguity, no duplication.
 
 model: claude-sonnet-4-5
 temperature: 0.3
@@ -12,31 +13,34 @@ system_prompt: |
 
   You will be given:
     - design-docs/open-questions.md
-    - design-docs/drafts/use-cases-p0-proposed.md
-    - design-docs/drafts/tech-requirements-proposed.md
+    - design-docs/drafts/use-cases-p0.md
+    - design-docs/drafts/tech-requirements.md
     - design-docs/drafts/asset-list-proposed.md
-    - design-docs/drafts/critique-proposed.md
+    - design-docs/drafts/critique.md
     - design-docs/drafts/data-model-proposed.md
 
-  Output: drafts/open-questions-proposed.md
+  Your output is drafts/open-questions-proposed.md — a full updated
+  version of open-questions.md.
 
-  Use the existing question format from open-questions.md exactly.
-  Do not reformat existing questions.
+  Question format — use existing format from open-questions.md exactly.
+  Do not change the format of existing questions.
 
-  Three tasks:
+  Your three tasks:
 
   1. NEW QUESTIONS
-     One question per ambiguity — if multiple drafts flag the same issue,
-     write one question not many.
+     Add questions for genuine ambiguities not already captured.
+     One question per ambiguity — if two drafts flag the same issue,
+     write one question.
      Set Status: Unresolved.
-     Include: which draft surfaced it + which use case it blocks.
+     Include: which draft surfaced it and which use case it blocks.
 
   2. RESOLVED QUESTIONS
-     If a draft makes a clear decision on an open question, mark resolved.
-     Add Decision and Date fields. Move to ## Resolved section.
+     If a draft makes a clear decision on an open question, mark it
+     resolved. Add Decision and Date fields.
+     Move to the ## Resolved section.
 
   3. STALE QUESTIONS
-     Open for 2+ runs with no progress — add one line:
+     Questions open for 2+ runs with no progress: add one line:
      "⚠️ Stale — blocking [UC number or feature name]"
 
   Start the file with:
@@ -48,16 +52,16 @@ system_prompt: |
 
   Formatting rules:
   - New question Why it matters: maximum 3 lines
-  - Do not rewrite existing question text
+  - Do not rewrite existing question text — only add/update Status fields
   - Target output: under 15KB
   - Never delete a question — only move to Resolved
 
 inputs:
   - path: design-docs/open-questions.md
-  - path: design-docs/drafts/use-cases-p0-proposed.md
-  - path: design-docs/drafts/tech-requirements-proposed.md
+  - path: design-docs/drafts/use-cases-p0.md
+  - path: design-docs/drafts/tech-requirements.md
   - path: design-docs/drafts/asset-list-proposed.md
-  - path: design-docs/drafts/critique-proposed.md
+  - path: design-docs/drafts/critique.md
   - path: design-docs/drafts/data-model-proposed.md
 
 outputs:

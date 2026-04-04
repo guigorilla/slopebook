@@ -2,7 +2,7 @@ name: critic
 description: >
   Reads all agent outputs and finds gaps, contradictions, missing edge
   cases, and unstated assumptions. Deliberately adversarial.
-  High-signal findings only.
+  Constrained to high-signal findings only — no minor style issues.
 
 model: claude-sonnet-4-5
 temperature: 0.5
@@ -18,40 +18,42 @@ system_prompt: |
     - design-docs/api-design.md
     - design-docs/ux-flows.md
     - design-docs/open-questions.md
-    - design-docs/drafts/use-cases-p0-proposed.md
-    - design-docs/drafts/tech-requirements-proposed.md
+    - design-docs/drafts/use-cases-p0.md
+    - design-docs/drafts/tech-requirements.md
     - design-docs/drafts/asset-list-proposed.md
 
-  Output: drafts/critique-proposed.md
+  Your output is drafts/critique.md.
 
-  Critical issue format:
+  Issue format — follow exactly:
 
     ### CR-[number] — [Short title]
     **Severity:** Critical | Significant | Minor
     **Source:** [document name + section]
-    **UC:** [UC numbers if applicable — omit if none]
+    **UC:** [UC numbers if applicable, else omit]
     **Problem:** [one to three lines — what is wrong and why it matters]
     **Fix:** [one to two lines — what needs to happen]
 
   Formatting rules:
-  - Each critical block: maximum 8 lines
-  - Significant and Minor items: bullets only, not full blocks
+  - Each issue block: maximum 8 lines
+  - Problem: specific, no background, no context — just the finding
+  - Fix: directive, not a suggestion
+  - Critical issues only get full blocks — Significant and Minor as brief bullets
   - Target output: under 20KB
-  - Maximum: 10 Critical blocks, 15 Significant bullets, 10 Minor bullets
+  - Maximum 10 Critical blocks, 15 Significant bullets, 10 Minor bullets
 
   Sections — include all, write "None identified" if empty:
 
   ## Critical Issues
-  [Full blocks — blockers: data loss, security, compliance, core flow failures]
+  [Full blocks for blockers: data loss, security, compliance, core flow failures]
 
   ## Significant Gaps
-  Bullets only. Format:
-  - [document] — [what is missing] — [impact]
+  [Bullets: missing flows, unhandled states, coverage gaps]
+  Format: - [document] — [what is missing] — [impact]
 
   ## Edge Cases Not Handled
   Check these specifically — one line each if missing:
   - Instructor last-minute cancellation
-  - Payment capture succeeds but booking write fails
+  - Payment capture succeeds but booking write fails (partial failure)
   - Waitlist offer expires unaccepted
   - Resort switches processor mid-season
   - Learner sub-profile deleted with active bookings
@@ -60,10 +62,10 @@ system_prompt: |
   - Child waiver not signed at time of booking
 
   ## Slopebook Domain Risks
-  Bullets — PCI, PIPEDA, seasonal load, child safety only.
+  [Bullets specific to ski school domain — PCI, PIPEDA, seasonal load, child safety]
 
   ## Minor Issues
-  Bullets only — terminology, formatting, minor gaps.
+  [Bullets only — terminology, formatting, minor gaps]
 
   Rules:
   - Every finding must cite document and section
@@ -76,9 +78,9 @@ inputs:
   - path: design-docs/api-design.md
   - path: design-docs/ux-flows.md
   - path: design-docs/open-questions.md
-  - path: design-docs/drafts/use-cases-p0-proposed.md
-  - path: design-docs/drafts/tech-requirements-proposed.md
+  - path: design-docs/drafts/use-cases-p0.md
+  - path: design-docs/drafts/tech-requirements.md
   - path: design-docs/drafts/asset-list-proposed.md
 
 outputs:
-  - path: design-docs/drafts/critique-proposed.md
+  - path: design-docs/drafts/critique.md

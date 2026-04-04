@@ -1,9 +1,9 @@
-# Slopebook — UI/UX Asset List (Proposed)
+# Slopebook — UI/UX Asset List
 
-**Document Status:** Draft — Generate Pipeline Run 6
-**Last Updated:** 2026-03-28
+**Document Status:** Draft — Generate Pipeline Run 7
+**Last Updated:** 2026-03-29
 **Author:** UI/UX Lead Agent
-**Source:** use-cases-p0-proposed.md (Run 6), tech-requirements-proposed.md (Run 6), ux-flows.md
+**Source:** use-cases-p0-proposed.md (Run 7), tech-requirements-proposed.md (Run 7), ux-flows.md
 **Scope:** P0 screens and components only. P1/P2 screens excluded.
 
 ---
@@ -40,7 +40,7 @@
 ### Customer / Booking Widget — Authentication Gate
 **Route:** /book/auth
 **UC:** UC-003, UC-004, UC-005
-**Elements:** guest checkout option, sign-in form, create account form, learner date of birth field (required), skill level selector (required), parental consent checkbox (conditional: age < 18), countdown timer
+**Elements:** guest checkout option, sign-in form, create account form, learner date of birth field (required), skill level selector (required), language selector (defaults to browser geolocation per OQ-057), parental consent checkbox (conditional: age < 18), countdown timer
 **States:** default (guest/sign-in/register tabs), consent-required (minor detected), slot-expired, sign-in-error, registration-error, email-conflict
 **Breakpoint:** mobile
 **i18n:** yes
@@ -98,11 +98,13 @@
 ### Instructor / Home — Today's Schedule
 **Route:** /schedule/today
 **UC:** UC-009, UC-011, UC-012, UC-013
-**Elements:** lesson card list, student name, skill level badge, lesson type label, meeting point, check-in CTA, no-show CTA, complete CTA
+**Elements:** lesson card list, student name, skill level badge, lesson type label, meeting point, check-in CTA, no-show CTA, complete CTA, cancel CTA (own lessons per OQ-058)
 **States:** empty, loading, checked-in, no-show, completed
 **Breakpoint:** mobile
 **i18n:** yes
 **Currency:** no
+**Note (OQ-055):** Booking cards show status = confirmed only. No in_progress state displayed.
+**Note (OQ-058):** Cancel CTA present on instructor's own lesson cards.
 
 ### Instructor / Check-In
 **Route:** /schedule/:bookingId/checkin
@@ -113,6 +115,7 @@
 **i18n:** yes
 **Currency:** no
 **Note (OQ-052):** Smartwaiver embed deferred. No iframe, no 15s timer, no typed-name fallback in P0.
+**Note (OQ-055):** Check-in sets Booking.checkedInAt only; status remains confirmed.
 
 ### Instructor / Session Notes
 **Route:** /schedule/:bookingId/notes
@@ -148,7 +151,7 @@
 ### Admin / Booking Management
 **Route:** /bookings
 **UC:** UC-021, UC-015, UC-019
-**Elements:** bookings table, filter bar (instructor, lesson type, date, status), weather bulk-cancel CTA, booking detail drawer, cancel CTA, bulk-cancel confirmation modal (affected count + refund total)
+**Elements:** bookings table, filter bar (instructor, lesson type, date, status), weather bulk-cancel CTA, booking detail drawer, cancel CTA, bulk-cancel confirmation modal (affected count + refund total), create booking CTA
 **States:** loading, empty, bulk-cancel-confirm modal, bulk-cancel-processing
 **Breakpoint:** desktop
 **i18n:** yes
@@ -197,7 +200,8 @@
 ### BookingCard
 **Surfaces:** customer, admin, instructor
 **UC:** UC-003, UC-004, UC-009, UC-014
-**Variants:** upcoming, in-progress, completed, cancelled, no-show
+**Variants:** upcoming, completed, cancelled, no-show
+**Note (OQ-055):** `in_progress` variant removed; status transitions directly from upcoming (confirmed) to completed or no-show.
 
 ### InstructorProfileCard
 **Surfaces:** customer
@@ -215,7 +219,7 @@
 **Variants:** active (green), warning (< 2 min, amber), expired (red + "slot expired" message)
 
 ### CancellationModal
-**Surfaces:** customer (authenticated only), admin
+**Surfaces:** customer (authenticated only), admin, instructor (own lessons per OQ-058)
 **UC:** UC-006
 **Variants:** with-refund (shows refund amount), no-refund (shows "no refund" warning)
 
@@ -284,4 +288,5 @@
 
 - ux-flows.md §1 — "Join waitlist" node has no customer-facing screen defined (P1 feature; deferred)
 - ux-flows.md §3 — "Sync with Google Calendar" listed in Availability Management; deferred to v1.5 (OQ-021); no screen needed
+- ux-flows.md §3 — "Tips (if applicable)" listed in Earnings Dashboard; removed from all plans (OQ-043); no screen needed
 - ux-flows.md §5 — Operator portal screens not included in P0 scope; deferred to P2

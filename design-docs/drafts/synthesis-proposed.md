@@ -1,49 +1,49 @@
 # Slopebook — Pipeline Synthesis
 
-**Document Status:** Draft — Run 6
-**Date:** 2026-03-28
+**Document Status:** Draft — Review Pipeline Run 7
+**Date:** 2026-03-29
 **Author:** Team Lead Agent
-**Pipeline:** pipeline-review.yaml
 
 ---
 
 ## Consistency Score
 
-**AMBER** — Run 6 drafts are internally consistent; three source documents (data-model.md, ux-flows.md, overview.md) are stale and three new BLOCKERs require resolution before Alpha development can begin.
+**AMBER** — api-design.md is missing 8+ P0-required endpoints and has two stale descriptions (tip reference in review endpoint; guestCheckoutId absent from booking payload); ux-flows.md has 4 stale references contradicting resolved OQs. All Run 7 draft files are internally consistent with each other.
 
 ---
 
 ## Blockers
 
-- **CR-001** — UC-003 step ordering: GuestCheckout created after payment capture; contradicts TR-003 which correctly orders POST /api/v1/guest-checkouts before charge
-- **CR-002** — UC-021 admin walk-up booking violates Booking CHECK constraint; no path defined for customer with no account (OQ-054)
-- **CR-003** — Booking.status = in_progress never triggered; enum value with no defined transition (OQ-055)
-- **CR-004** — Payment void failure has no compensation state defined; `void_pending` added to schema in v0.5 but retry policy, alert, and escalation are unspecified (OQ-056)
-- **OQ-054** — Admin walk-up booking: GuestCheckout creation path undefined — BLOCKER for UC-021
-- **OQ-055** — Booking.status in_progress trigger undefined — BLOCKER for UC-012, UC-013
-- **OQ-056** — Payment void failure compensation policy undefined — BLOCKER for TR-003, TR-004
+- **CR-001** — Booking API payload missing `guestCheckoutId`: guest checkout booking path (UC-003) cannot link booking to GuestCheckout record. api-design.md must add `guestCheckoutId` to booking request payload before API implementation begins.
+- **CR-002** — `POST /api/v1/bookings/:id/review` description says "tip and rating" — tips removed by OQ-043. Developers implementing from api-design.md will add tipAmountCents, causing schema mismatch.
+- **CR-003** — `Payment.bookingId NOT NULL` will block P1 package purchase payments (UC-024). OQ-059 raised; data-model-proposed.md adopts provisional fix (nullable bookingId + lessonPackageId FK). Needs explicit resolution before P1 development.
 
 ---
 
 ## Promote These Files
 
-- drafts/use-cases-p0-proposed.md → design-docs/use-cases-p0.md **[HOLD]** — CR-001 (UC-003 step ordering) must be fixed first
-- drafts/use-cases-p1-proposed.md → design-docs/use-cases-p1.md **[READY]** — no critical issues; UC-031a full-refund rule (OQ-051) correctly applied
-- drafts/tech-requirements-proposed.md → design-docs/tech-requirements.md **[HOLD]** — OQ-054/055/056 are BLOCKERs; promote after resolution
-- drafts/asset-list-proposed.md → design-docs/asset-list.md **[READY]** — no critical issues; Smartwaiver simplification correctly applied
-- drafts/data-model-proposed.md → design-docs/data-model.md **[READY]** — v0.5 applies all OQ resolutions through OQ-053 plus CR-004 void_pending; safe to promote
-- drafts/open-questions-proposed.md → design-docs/open-questions.md **[HOLD]** — wait for OQ-054/055/056/057/058 decisions before promoting
+- drafts/use-cases-p0-proposed.md     → design-docs/use-cases-p0.md     **READY**
+- drafts/use-cases-p1-proposed.md     → design-docs/use-cases-p1.md     **READY**
+- drafts/tech-requirements-proposed.md → design-docs/tech-requirements.md **READY**
+- drafts/asset-list-proposed.md       → design-docs/asset-list.md       **READY**
+- drafts/data-model-proposed.md       → design-docs/data-model.md       **READY** — v0.6; Payment schema updated for P1 compatibility (OQ-059 provisional)
+- drafts/open-questions-proposed.md   → design-docs/open-questions.md   **READY** — 2 new OQs (OQ-059, OQ-060)
+
+All 6 files are READY. AMBER score reflects staleness in **source** docs (api-design.md, ux-flows.md) that have not been updated to reflect resolved OQs, not conflicts within the draft set itself.
 
 ---
 
 ## Open Questions This Run
 
-New: 5 (OQ-054, OQ-055, OQ-056, OQ-057, OQ-058)
-Resolved: 3 (OQ-051, OQ-052, OQ-053)
+New: 2 (OQ-059, OQ-060)
+Resolved: 0
 Stale blockers: 0
+
+**OQ-059** — Payment.bookingId constraint vs P1 package purchases — blocks UC-024 (P1)
+**OQ-060** — Booking auto-completion if instructor never marks complete — blocks UC-007 (rating), booking.completed event, earnings reporting
 
 ---
 
 ## Next Run Focus
 
-Resolve OQ-054 (admin walk-up booking path), OQ-055 (in_progress trigger), and OQ-056 (void compensation policy) — all three are BLOCKER-class and block UC-021, UC-012/013, and TR-003/004 respectively. Once resolved, run pipeline-generate to fix UC-003 step ordering (CR-001) and add the walk-up path to UC-021, then promote use-cases-p0-proposed.md, tech-requirements-proposed.md, and open-questions-proposed.md. Also update the three stale source documents (ux-flows.md tips/calendar references, overview.md pricing floors) before the next review run to eliminate recurring consistency noise.
+The two new open questions (OQ-059, OQ-060) should be resolved before the next generate run so the data model and use cases can incorporate the decisions. In parallel, api-design.md requires a dedicated update pass to add the 16 missing endpoints, fix the booking payload, correct the review endpoint description, and add the `booking.completed` notification event — this update is the highest-value unblocked work remaining before P0 development can begin from the design docs alone.

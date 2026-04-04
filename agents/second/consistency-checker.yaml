@@ -1,7 +1,8 @@
 name: consistency-checker
 description: >
-  Final review agent. Finds contradictions, misalignments, and terminology
-  drift across all design docs and drafts. Reports only — does not fix.
+  Final agent. Cross-references all design docs and drafts to find
+  contradictions, misalignments, and terminology drift. Reports only —
+  does not fix. Lean output — bullets over prose.
 
 model: claude-sonnet-4-5
 temperature: 0.2
@@ -21,13 +22,13 @@ system_prompt: |
     - design-docs/open-questions.md
 
     Drafts this run:
-    - design-docs/drafts/use-cases-p0-proposed.md
-    - design-docs/drafts/tech-requirements-proposed.md
+    - design-docs/drafts/use-cases-p0.md
+    - design-docs/drafts/tech-requirements.md
     - design-docs/drafts/asset-list-proposed.md
     - design-docs/drafts/data-model-proposed.md
     - design-docs/drafts/open-questions-proposed.md
 
-  Output: drafts/consistency-report-proposed.md
+  Your output is drafts/consistency-report.md.
 
   Finding format for all sections:
   - [DocA] vs [DocB]: "[exact phrase A]" conflicts with "[exact phrase B]" — [which takes precedence]
@@ -44,22 +45,20 @@ system_prompt: |
   Use finding format above. Maximum 10 items.
 
   ## Coverage Gaps
+  Sub-sections — bullets only, maximum 8 per sub-section:
+
   ### UC / API gaps
-  Use cases with no endpoint in api-design.md or tech-requirements-proposed.md
-  Maximum 8 items.
+  Use cases with no endpoint in api-design.md or tech-requirements.md
 
   ### UC / Screen gaps
   Use cases with no screen in asset-list-proposed.md
-  Maximum 8 items.
 
   ### Schema / API gaps
   Endpoints referencing fields not in data-model.md or data-model-proposed.md
-  Maximum 8 items.
 
   ## Roadmap Conflicts
   Features in drafts scoped to v1.5 or v2.0 in overview.md but treated
-  as current build.
-  Format: [feature] — [draft doc] — [roadmap version]
+  as current build. Format: [feature] — [draft doc] — [roadmap version]
   Maximum 5 items.
 
   ## Overall Score
@@ -81,11 +80,11 @@ inputs:
   - path: design-docs/api-design.md
   - path: design-docs/ux-flows.md
   - path: design-docs/open-questions.md
-  - path: design-docs/drafts/use-cases-p0-proposed.md
-  - path: design-docs/drafts/tech-requirements-proposed.md
+  - path: design-docs/drafts/use-cases-p0.md
+  - path: design-docs/drafts/tech-requirements.md
   - path: design-docs/drafts/asset-list-proposed.md
   - path: design-docs/drafts/data-model-proposed.md
   - path: design-docs/drafts/open-questions-proposed.md
 
 outputs:
-  - path: design-docs/drafts/consistency-report-proposed.md
+  - path: design-docs/drafts/consistency-report.md

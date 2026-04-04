@@ -126,6 +126,7 @@ POST   /api/v1/bookings/:id/review    Submit tip and rating after lesson complet
   "instructorId": "uuid",
   "startAt": "2026-12-20T09:00:00Z",
   "paymentMethodId": "uuid",
+  "guestCheckoutId": "uuid | null",
   "reservationId": "uuid | null",
   "sessionToken": "string | null"
 }

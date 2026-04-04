@@ -1,11 +1,10 @@
-# Slopebook — Proposed Data Model
+# Slopebook — Data Model
 
-**Document Status:** Draft — Review Pipeline Run 6
-**Last Updated:** 2026-03-28
+**Document Status:** Draft — Review Pipeline Run 7
+**Last Updated:** 2026-03-29
 **Author:** Data-Modeler Agent
-**Version:** 0.5 (proposed revision of data-model-proposed.md v0.4)
-**Baseline:** data-model-proposed.md v0.4
-**Sources:** use-cases-p0-proposed.md (Run 6), tech-requirements-proposed.md (Run 6), critique-proposed.md (Run 6)
+**Version:** 0.6
+**Sources:** use-cases-p0-proposed.md (Run 7), tech-requirements-proposed.md (Run 7), data-model.md (v0.5), critique-proposed.md (Run 7)
 
 ---
 
@@ -249,20 +248,20 @@ GuestCheckout
   phone                 string, nullable
   firstName             string
   lastName              string
-  preferredLanguage     enum(en, fr), default 'en'   -- CHANGED: add default; collected at checkout (CR-001 fix)
+  preferredLanguage     enum(en, fr), default 'en'
   learnerDateOfBirth    date, NOT NULL
   skillLevel            enum(beginner, intermediate, advanced)
   parentalConsentGiven  boolean, nullable
   parentalConsentAt     timestamp, nullable
   waiverToken           string, nullable              -- reserved: Smartwaiver deferred (OQ-052); null for P0
-  waiverStatus          enum(not_required, pending, signed, fallback_typed_name), nullable  -- reserved: deferred; null for P0
+  waiverStatus          enum(not_required, pending, signed, fallback_typed_name), nullable  -- reserved: deferred (OQ-052); null for P0
   createdAt             timestamp
   updatedAt             timestamp
 ```
 
 Index: `(tenantId, email)`
 Application-layer enforcement: if `learnerDateOfBirth` indicates age < 18, `parentalConsentGiven` must be `true`.
-Note: `preferredLanguage` must be collected in guest checkout flow (step 2) to support bilingual confirmation emails. Default = `en` if not supplied.
+Note (OQ-057): `preferredLanguage` defaults to browser geolocation at checkout; collected in the Authentication Gate UI.
 
 ---
 
@@ -286,6 +285,8 @@ GroupSession
   updatedAt           timestamp
 ```
 
+Note: `in_progress` retained on GroupSession (not Booking) as group sessions have a distinct lifecycle.
+
 ---
 
 ### Booking
@@ -303,7 +304,7 @@ Booking
   cancellationPolicyId  uuid, FK → CancellationPolicy
   startAt               timestamp
   endAt                 timestamp
-  status                enum(confirmed, in_progress, completed, cancelled, no_show)
+  status                enum(confirmed, completed, cancelled, no_show)  -- in_progress REMOVED per OQ-055
   skillLevelAtBooking   enum(beginner, intermediate, advanced)
   meetingPoint          string, nullable
   checkedInAt           timestamp, nullable
@@ -319,11 +320,10 @@ CHECK constraints (application layer):
 - `startAt < endAt`
 - `cancellationPolicyId IS NOT NULL`
 
-Status transition rules:
-- `confirmed` → `in_progress`: set when `checkedInAt` is populated (UC-010) or at lesson start time via scheduled job
-- `confirmed` / `in_progress` → `completed`: set by instructor (UC-013)
-- `confirmed` / `in_progress` → `no_show`: set by instructor (UC-011)
-- `confirmed` → `cancelled`: set by customer, admin, or cascade (UC-006, UC-019, UC-031a)
+Status transition rules (OQ-055):
+- `confirmed` → `completed`: set by instructor (UC-013); `checkedInAt` records check-in time
+- `confirmed` → `no_show`: set by instructor (UC-011)
+- `confirmed` → `cancelled`: set by customer, admin, instructor (own lessons), or cascade (UC-006, UC-019, UC-031a)
 
 ---
 
@@ -371,12 +371,13 @@ Payment
   tenantId              uuid, FK → Tenant
   householdId           uuid, FK → Household, nullable
   guestCheckoutId       uuid, FK → GuestCheckout, nullable
-  bookingId             uuid, FK → Booking, nullable
+  bookingId             uuid, FK → Booking, nullable        -- CHANGED: nullable for P1 package purchase compatibility (CR-003/OQ-059)
+  lessonPackageId       uuid, FK → LessonPackage, nullable  -- ADDED: P1 package purchase payment link (CR-003/OQ-059)
   processor             enum(stripe, shift4)
   processorPaymentId    string
   amountCents           integer
   currency              enum(USD, CAD)
-  status                enum(pending, captured, refunded, partially_refunded, failed, void_pending)  -- CHANGED: add void_pending for CR-004 compensation state
+  status                enum(pending, captured, refunded, partially_refunded, failed, void_pending)
   refundedAmountCents   integer, default 0
   platformFeeCents      integer
   createdAt             timestamp
@@ -385,11 +386,14 @@ Payment
 
 CHECK constraints:
 - `(householdId IS NOT NULL) OR (guestCheckoutId IS NOT NULL)`
-- `bookingId IS NOT NULL`
+- `(bookingId IS NOT NULL) OR (lessonPackageId IS NOT NULL)`  -- CHANGED: replaces `bookingId IS NOT NULL`; exactly one of bookingId or lessonPackageId must be set
+- `(bookingId IS NULL) OR (lessonPackageId IS NULL)`          -- ADDED: enforce mutual exclusion
 - `refundedAmountCents <= amountCents`
 - `amountCents > 0`
 
-`void_pending` status: set when `POST /api/v1/payments/:id/refund` (void) fails after 3 DB write retries. Background job retries void with alerting after N hours if still in this state (CR-004).
+`void_pending` (OQ-056): set when void fails after all retries. Void retry policy: 4 attempts at 100ms intervals; if all fail, silently set `void_pending` for ops review.
+
+**P1 Note (OQ-059):** `LessonPackage` entity is a P1 addition (UC-024). The `lessonPackageId` FK is defined here in anticipation but the LessonPackage entity itself is not defined in this P0 schema. The CHECK constraint `(bookingId IS NULL) OR (lessonPackageId IS NULL)` will evaluate correctly when both are null (P0 path: bookingId set, lessonPackageId null).
 
 ---
 
@@ -528,16 +532,10 @@ Immutable — no UPDATE or DELETE permitted. No `updatedAt`.
 
 ## Change Summary
 
-| Entity.field | Change | Reference | Additive/Destructive |
-|---|---|---|---|
-| `GuestCheckout.preferredLanguage` | CHANGED: add default 'en' | CR-001 fix; bilingual email support | Additive |
-| `Payment.status` | CHANGED: add `void_pending` enum value | CR-004 compensation state | Additive |
-| `Booking` status transition rules | ADDED: documented in schema | CR-003 | Additive |
-| `Learner.waiverToken` | ANNOTATED: reserved/deferred for P0 | OQ-052 | — |
-| `Learner.waiverStatus` | ANNOTATED: reserved/deferred for P0 | OQ-052 | — |
-| `GuestCheckout.waiverToken` | ANNOTATED: reserved/deferred for P0 | OQ-052 | — |
-| `GuestCheckout.waiverStatus` | ANNOTATED: reserved/deferred for P0 | OQ-052 | — |
-| All v0.4 changes | Carried forward | v0.4 | See v0.4 |
+Payment.bookingId — CHANGED — nullable (was NOT NULL); CR-003/OQ-059 — destructive
+Payment.lessonPackageId — ADDED — P1 package payment FK; CR-003/OQ-059 — additive
+Payment CHECK `bookingId IS NOT NULL` — CHANGED — replaced with `(bookingId IS NOT NULL) OR (lessonPackageId IS NOT NULL)`; CR-003 — destructive
+Payment CHECK mutual exclusion — ADDED — `(bookingId IS NULL) OR (lessonPackageId IS NULL)`; CR-003 — additive
 
 ---
 
@@ -545,9 +543,12 @@ Immutable — no UPDATE or DELETE permitted. No `updatedAt`.
 
 | Entity.field | Migration required | Risk |
 |---|---|---|
-| `Payment.status` | Add `void_pending` enum value. Additive; no existing rows affected. | Low |
-| `GuestCheckout.preferredLanguage` | Already exists; add `DEFAULT 'en'` constraint. Existing nullable rows backfill to 'en'. | Low |
-| `GuestCheckout.learnerDateOfBirth` | NOT NULL (from v0.4). No prod data. | Low |
-| `Payment.groupSessionId` | DROP (from v0.4). No prod data. | Low |
-| `PaymentMethod.processorTokenId` | Apply KMS envelope encryption (from v0.4). No prod data. | Low |
-| `Availability.recurrence` | Type change json → text (from v0.2). Requires data migration. | Med |
+| `Booking.status in_progress` | DROP enum value. No prod data. | Low |
+| `Payment.status void_pending` | ADD enum value. Additive. | Low |
+| `GuestCheckout.preferredLanguage` | ADD DEFAULT 'en'. Backfill nulls. | Low |
+| `GuestCheckout.learnerDateOfBirth` | NOT NULL. No prod data. | Low |
+| `Payment.groupSessionId` | DROP FK column and CHECK. No prod data. | Low |
+| `PaymentMethod.processorTokenId` | Apply KMS envelope encryption. No prod data. | Low |
+| `Availability.recurrence` | Type change json → text. Requires data migration. | Med |
+| `Payment.bookingId` | ALTER COLUMN nullable. Additive in DB; check constraints updated. No prod data. | Low |
+| `Payment.lessonPackageId` | ADD COLUMN nullable FK. Additive. LessonPackage entity added in P1 migration. | Low |

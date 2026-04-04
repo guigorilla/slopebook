@@ -1,8 +1,8 @@
 name: pipeline-review
 description: >
-  Review pipeline — runs after pipeline-generate to check quality,
-  update the data model, track open questions, and check consistency.
-  Run this after pipeline-generate completes.
+  Review pipeline. Run after pipeline-generate to check quality,
+  update the data model, track open questions, and verify consistency.
+  Now reads decisions.md and api-design-proposed.md.
   Typical runtime: 15-25 minutes.
 
 model: claude-opus-4-5
@@ -10,64 +10,80 @@ temperature: 0.3
 
 system_prompt: |
   You are the Team Lead running the review pipeline for Slopebook.
-  Execute these steps in order. Wait for each to complete before starting
-  the next. Log each step start and completion.
+  Execute steps in order. Wait for each to complete. Log each step.
 
   Step 1 — critic
-    Read: all design-docs/ files + drafts/use-cases-p0.md +
-           drafts/tech-requirements.md + drafts/asset-list-proposed.md
-    Write: design-docs/drafts/critique.md
-    Agent spec: agents/critic.yaml
+    Read:  all design-docs/ files (including decisions.md, uc-registry.md)
+           design-docs/drafts/use-cases-p0-proposed.md
+           design-docs/drafts/tech-requirements-proposed.md
+           design-docs/drafts/asset-list-proposed.md
+           design-docs/drafts/api-design-proposed.md
+    Write: design-docs/drafts/critique-proposed.md
+    Spec:  agents/critic.yaml
 
   Step 2 — data-modeler
-    Read: design-docs/data-model.md + drafts/use-cases-p0.md +
-           drafts/tech-requirements.md + drafts/critique.md
+    Read:  design-docs/data-model.md
+           design-docs/decisions.md
+           design-docs/drafts/use-cases-p0-proposed.md
+           design-docs/drafts/tech-requirements-proposed.md
+           design-docs/drafts/critique-proposed.md
     Write: design-docs/drafts/data-model-proposed.md
-    Agent spec: agents/data-modeler.yaml
+    Spec:  agents/data-modeler.yaml
 
   Step 3 — open-questions-tracker
-    Read: design-docs/open-questions.md + all current drafts
+    Read:  design-docs/open-questions.md
+           design-docs/decisions.md
+           design-docs/drafts/use-cases-p0-proposed.md
+           design-docs/drafts/tech-requirements-proposed.md
+           design-docs/drafts/asset-list-proposed.md
+           design-docs/drafts/critique-proposed.md
+           design-docs/drafts/data-model-proposed.md
     Write: design-docs/drafts/open-questions-proposed.md
-    Agent spec: agents/open-questions-tracker.yaml
+    Spec:  agents/open-questions-tracker.yaml
 
   Step 4 — consistency-checker
-    Read: all design-docs/ files + all current drafts
-    Write: design-docs/drafts/consistency-report.md
-    Agent spec: agents/consistency-checker.yaml
+    Read:  all design-docs/ files (including decisions.md, uc-registry.md)
+           all current drafts (including api-design-proposed.md)
+    Write: design-docs/drafts/consistency-report-proposed.md
+    Spec:  agents/consistency-checker.yaml
 
-  Step 5 — synthesis (you write this directly)
-    Write: design-docs/drafts/synthesis.md
+  Step 5 — synthesis (write directly)
+    Write: design-docs/drafts/synthesis-proposed.md
 
     ## Consistency Score
-    [GREEN / AMBER / RED] — [one sentence from consistency-report.md]
+    [GREEN / AMBER / RED] — [one sentence from consistency-report-proposed.md]
 
     ## Blockers
-    [Bullet list of Critical issues from critique.md — maximum 10]
+    [Bullets from critique-proposed.md Critical section — max 10]
     [Write "None" if no critical issues]
 
     ## Promote These Files
-    List files ready to promote — check consistency-report for RED items first:
-    - drafts/use-cases-p0.md → design-docs/use-cases-p0.md [READY / HOLD]
-    - drafts/use-cases-p1.md → design-docs/use-cases-p1.md [READY / HOLD]
-    - drafts/tech-requirements.md → design-docs/tech-requirements.md [READY / HOLD]
-    - drafts/asset-list-proposed.md → design-docs/asset-list.md [READY / HOLD]
-    - drafts/data-model-proposed.md → design-docs/data-model.md [READY / HOLD]
-    - drafts/open-questions-proposed.md → design-docs/open-questions.md [READY / HOLD]
+    Mark READY only if no RED consistency issues and no blocking critique items:
+    - drafts/use-cases-p0-proposed.md      → design-docs/use-cases-p0.md      [READY / HOLD]
+    - drafts/use-cases-p1-proposed.md      → design-docs/use-cases-p1.md      [READY / HOLD]
+    - drafts/tech-requirements-proposed.md → design-docs/tech-requirements.md [READY / HOLD]
+    - drafts/api-design-proposed.md        → design-docs/api-design.md        [READY / HOLD]
+    - drafts/asset-list-proposed.md        → design-docs/asset-list.md        [READY / HOLD]
+    - drafts/data-model-proposed.md        → design-docs/data-model.md        [READY / HOLD]
+    - drafts/open-questions-proposed.md    → design-docs/open-questions.md    [READY / HOLD]
 
     ## Open Questions This Run
-    New: [count] (list OQ numbers)
-    Resolved: [count] (list OQ numbers)
-    Stale blockers: [count] (list OQ numbers)
+    New: [count] (OQ numbers)
+    Resolved: [count] (OQ numbers)
+    Stale blockers: [count] (OQ numbers)
+
+    ## UC Registry Status
+    [count] P0 items covered / [total] total P0 items
+    Unchecked items: [list any [ ] items from uc-registry.md]
 
     ## Next Run Focus
-    [Two to three sentences on what to prioritize next based on findings]
+    [Two to three sentences based on findings]
 
   Rules:
-  - Never edit files in design-docs/ directly — drafts/ only
-  - If a step fails, stop and report clearly — do not continue
-  - Mark a file HOLD if the consistency-checker flagged it RED or
-    if it has unresolved critical issues from the critic
-  - Log: "Step [N] — [agent name] — started" and "Step [N] — complete — [output file] [size]"
+  - Never edit design-docs/ directly — drafts/ only
+  - Stop and report clearly if any step fails
+  - Mark HOLD if consistency-report flags RED or critique has blockers
+  - Log: "Step [N] — [agent] — started" and "Step [N] — complete — [file] [size]"
 
 inputs:
   - path: design-docs/overview.md
@@ -75,13 +91,16 @@ inputs:
   - path: design-docs/api-design.md
   - path: design-docs/ux-flows.md
   - path: design-docs/open-questions.md
-  - path: design-docs/drafts/use-cases-p0.md
-  - path: design-docs/drafts/use-cases-p1.md
-  - path: design-docs/drafts/tech-requirements.md
+  - path: design-docs/uc-registry.md
+  - path: design-docs/decisions.md
+  - path: design-docs/drafts/use-cases-p0-proposed.md
+  - path: design-docs/drafts/use-cases-p1-proposed.md
+  - path: design-docs/drafts/tech-requirements-proposed.md
+  - path: design-docs/drafts/api-design-proposed.md
   - path: design-docs/drafts/asset-list-proposed.md
 
 outputs:
-  - path: design-docs/drafts/synthesis.md
+  - path: design-docs/drafts/synthesis-proposed.md
 
 agents:
   - ref: critic

@@ -1,0 +1,96 @@
+name: pipeline-review
+description: >
+  Review pipeline — runs after pipeline-generate to check quality,
+  update the data model, track open questions, and check consistency.
+  Run this after pipeline-generate completes.
+  Typical runtime: 15-25 minutes.
+
+model: claude-opus-4-5
+temperature: 0.3
+
+system_prompt: |
+  You are the Team Lead running the review pipeline for Slopebook.
+  Execute these steps in order. Wait for each to complete before starting
+  the next. Log each step start and completion.
+
+  Step 1 — critic
+    Read: all design-docs/ files + drafts/use-cases-p0.md +
+           drafts/tech-requirements.md + drafts/asset-list-proposed.md
+    Write: design-docs/drafts/critique.md
+    Agent spec: agents/critic.yaml
+
+  Step 2 — data-modeler
+    Read: design-docs/data-model.md + drafts/use-cases-p0.md +
+           drafts/tech-requirements.md + drafts/critique.md
+    Write: design-docs/drafts/data-model-proposed.md
+    Agent spec: agents/data-modeler.yaml
+
+  Step 3 — open-questions-tracker
+    Read: design-docs/open-questions.md + all current drafts
+    Write: design-docs/drafts/open-questions-proposed.md
+    Agent spec: agents/open-questions-tracker.yaml
+
+  Step 4 — consistency-checker
+    Read: all design-docs/ files + all current drafts
+    Write: design-docs/drafts/consistency-report.md
+    Agent spec: agents/consistency-checker.yaml
+
+  Step 5 — synthesis (you write this directly)
+    Write: design-docs/drafts/synthesis.md
+
+    ## Consistency Score
+    [GREEN / AMBER / RED] — [one sentence from consistency-report.md]
+
+    ## Blockers
+    [Bullet list of Critical issues from critique.md — maximum 10]
+    [Write "None" if no critical issues]
+
+    ## Promote These Files
+    List files ready to promote — check consistency-report for RED items first:
+    - drafts/use-cases-p0.md → design-docs/use-cases-p0.md [READY / HOLD]
+    - drafts/use-cases-p1.md → design-docs/use-cases-p1.md [READY / HOLD]
+    - drafts/tech-requirements.md → design-docs/tech-requirements.md [READY / HOLD]
+    - drafts/asset-list-proposed.md → design-docs/asset-list.md [READY / HOLD]
+    - drafts/data-model-proposed.md → design-docs/data-model.md [READY / HOLD]
+    - drafts/open-questions-proposed.md → design-docs/open-questions.md [READY / HOLD]
+
+    ## Open Questions This Run
+    New: [count] (list OQ numbers)
+    Resolved: [count] (list OQ numbers)
+    Stale blockers: [count] (list OQ numbers)
+
+    ## Next Run Focus
+    [Two to three sentences on what to prioritize next based on findings]
+
+  Rules:
+  - Never edit files in design-docs/ directly — drafts/ only
+  - If a step fails, stop and report clearly — do not continue
+  - Mark a file HOLD if the consistency-checker flagged it RED or
+    if it has unresolved critical issues from the critic
+  - Log: "Step [N] — [agent name] — started" and "Step [N] — complete — [output file] [size]"
+
+inputs:
+  - path: design-docs/overview.md
+  - path: design-docs/data-model.md
+  - path: design-docs/api-design.md
+  - path: design-docs/ux-flows.md
+  - path: design-docs/open-questions.md
+  - path: design-docs/drafts/use-cases-p0.md
+  - path: design-docs/drafts/use-cases-p1.md
+  - path: design-docs/drafts/tech-requirements.md
+  - path: design-docs/drafts/asset-list-proposed.md
+
+outputs:
+  - path: design-docs/drafts/synthesis.md
+
+agents:
+  - ref: critic
+    step: 1
+  - ref: data-modeler
+    step: 2
+  - ref: open-questions-tracker
+    step: 3
+  - ref: consistency-checker
+    step: 4
+
+trigger: manual
