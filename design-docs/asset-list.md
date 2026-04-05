@@ -1,206 +1,331 @@
 # Slopebook — UI/UX Asset List
 
-**Document Status:** Draft — Generate Pipeline Run 8
+**Document Status:** Draft — Generate Pipeline Run 10
 **Last Updated:** 2026-04-04
-**Author:** UI/UX Lead Agent
-**Source:** use-cases-p0-proposed.md (Run 8), tech-requirements-proposed.md (Run 8), ux-flows.md
-**Scope:** P0 screens and components only. P1/P2 screens excluded.
+**Pipeline:** pipeline-generate.yaml
+**Sources:** use-cases-p0-proposed.md (Run 10), tech-requirements-proposed.md (Run 10), ux-flows.md
 
 ---
 
-## Customer App Screens
+## Customer App
 
-### Customer / Booking Widget — Lesson Selection
-**Route:** /book
+---
+
+### Customer / Booking Widget — Home
+
+**Route:** /
 **UC:** UC-001
-**Elements:** lesson type selector, skill level selector, instructor grid, instructor profile card
-**States:** loading, empty (no availability), filtered
-**Breakpoint:** mobile
-**i18n:** yes — all labels and instructor bio in EN/FR based on preferred language (OQ-030: all tiers)
-**Currency:** no
-
-### Customer / Booking Widget — Date & Time Picker
-**Route:** /book/schedule
-**UC:** UC-001, UC-002
-**Elements:** calendar, time slot list, instructor availability indicator (green = available, gray = unavailable), countdown timer (activates on SlotReservation creation)
-**States:** loading, empty (no slots), slot-taken (BOOKING_CONFLICT), countdown-warning (< 2 min), countdown-expired
-**Breakpoint:** mobile
-**i18n:** yes
-**Currency:** no
-
-### Customer / Booking Widget — Booking Summary
-**Route:** /book/summary
-**UC:** UC-001, UC-002
-**Elements:** lesson details card, instructor card, price display, language toggle, confirm CTA, countdown timer
-**States:** default, hold-expired warning
-**Breakpoint:** mobile
+**Elements:** LessonTypeSelector, AgeInput, SkillLevelSelector, DatePicker, AvailabilityGrid, InstructorCard
+**States:** loading, empty (no availability), results, no-availability (waitlist prompt)
+**Breakpoint:** both
 **i18n:** yes
 **Currency:** yes
 
-### Customer / Booking Widget — Authentication Gate
-**Route:** /book/auth
+---
+
+### Customer / Instructor Profile
+
+**Route:** /instructors/:id
+**UC:** UC-002
+**Elements:** InstructorPhoto, BilingualBio, CertificationBadges, LanguagesList, StarRating, SelectButton
+**States:** loading, error
+**Breakpoint:** both
+**i18n:** yes
+**Currency:** no
+
+---
+
+### Customer / Authentication Gate
+
+**Route:** /checkout/auth
+**UC:** UC-003, UC-004
+**Elements:** GuestContinueButton, SignInForm, CreateAccountLink, LanguageToggle
+**States:** default, loading
+**Breakpoint:** both
+**i18n:** yes
+**Currency:** no
+
+---
+
+### Customer / Guest Checkout Form
+
+**Route:** /checkout/guest
+**UC:** UC-003
+**Elements:** EmailInput, NameInputs, DateOfBirthInput, SkillLevelSelector, LanguageToggle, ParentalConsentCheckbox, SubmitButton
+**States:** default, validation-error, loading, age-blocked (AGE_TOO_YOUNG)
+**Breakpoint:** both
+**i18n:** yes
+**Currency:** no
+
+---
+
+### Customer / Payment Screen
+
+**Route:** /checkout/payment
 **UC:** UC-003, UC-004, UC-005
-**Elements:** guest checkout option, sign-in form, create account form, learner date of birth field (required), skill level selector (required), language selector (defaults to browser geolocation per OQ-057), parental consent checkbox (conditional: age < 18), countdown timer
-**States:** default (guest/sign-in/register tabs), consent-required (minor detected), slot-expired, sign-in-error, registration-error, email-conflict
-**Breakpoint:** mobile
+**Elements:** ProcessorSDKEmbed, SaveCardToggle, DefaultCardBadge, CardOnFileList, PaymentSummary, ConfirmButton, HoldExpiryTimer
+**States:** loading, processing, declined (PAYMENT_FAILED), hold-expired (HOLD_EXPIRED)
+**Breakpoint:** both
+**i18n:** yes
+**Currency:** yes
+
+---
+
+### Customer / Booking Confirmation
+
+**Route:** /booking/:id/confirmation
+**UC:** UC-003, UC-004, UC-005, UC-020
+**Elements:** BookingSummaryCard, InstructorDetails, IcsDownloadLink, AddToCalendarButton, AccountCreationPrompt
+**States:** success, error
+**Breakpoint:** both
+**i18n:** yes
+**Currency:** yes
+
+---
+
+### Customer / Post-Payment Account Creation Prompt
+
+**Route:** /checkout/create-account
+**UC:** UC-003
+**Elements:** PrePopulatedForm (email, learner data), PasswordInput, SkipButton, CreateAccountButton
+**States:** default, loading, success
+**Breakpoint:** both
 **i18n:** yes
 **Currency:** no
 
-### Customer / Booking Widget — Payment
-**Route:** /book/payment
-**UC:** UC-003, UC-004
-**Elements:** processor JS SDK card field, save-card checkbox (authenticated users only), pay CTA, price summary, countdown timer
-**States:** default, processing, payment-error (card declined), booking-failed (3 retries exhausted, payment voided), hold-expired
-**Breakpoint:** mobile
-**i18n:** yes
-**Currency:** yes
+---
 
-### Customer / Booking Widget — Confirmation
-**Route:** /book/confirmation
-**UC:** UC-003, UC-004
-**Elements:** booking reference, lesson summary, instructor name, calendar add (.ics), email confirmation notice
-**States:** success (guest-checkout: ContactSchoolCard shown; authenticated: manage-booking link shown)
-**Breakpoint:** mobile
-**i18n:** yes
-**Currency:** yes
+### Customer / Account Dashboard
 
-### Customer / Account — Booking Dashboard
-**Route:** /account/bookings
-**UC:** UC-006, UC-007
-**Elements:** upcoming booking list, past booking list, cancel CTA (authenticated only), rating prompt card (completed lessons)
-**States:** empty, loading, cancel-confirm modal
+**Route:** /account
+**UC:** UC-018, UC-005
+**Elements:** UpcomingLessonsList, HouseholdMemberList, PaymentMethodList, BookingHistoryLink, LanguageToggle
+**States:** loading, empty (no upcoming lessons), populated
 **Breakpoint:** both
 **i18n:** yes
 **Currency:** yes
 
-### Customer / Account — Booking Detail
-**Route:** /account/bookings/:id
-**UC:** UC-006, UC-007
-**Elements:** lesson info, instructor card, payment receipt, session notes (if shared), cancel button (authenticated only), rating form (if completed)
-**States:** upcoming, completed, cancelled, no-show
+---
+
+### Customer / Learner Management
+
+**Route:** /account/learners
+**UC:** UC-018
+**Elements:** LearnerCard, AddLearnerForm, EditLearnerForm, DeleteButton, ParentalConsentBadge
+**States:** loading, empty, populated, delete-blocked (LEARNER_HAS_ACTIVE_BOOKINGS)
 **Breakpoint:** both
 **i18n:** yes
-**Currency:** yes
+**Currency:** no
+
+---
+
+### Customer / Payment Methods
+
+**Route:** /account/payment-methods
+**UC:** UC-018, UC-006
+**Elements:** CardList, AddCardButton, SetDefaultButton, RemoveButton, ProcessorSDKEmbed
+**States:** loading, empty, populated
+**Breakpoint:** both
+**i18n:** yes
+**Currency:** no
+
+---
 
 ### Customer / Post-Lesson Review
-**Route:** /account/bookings/:id/review
+
+**Route:** /booking/:id/review
 **UC:** UC-007
-**Elements:** star rating selector (1–5), comment textarea (optional), submit CTA, tip prompt (conditional on OQ-043 resolution: card selector + amount input + submit tip CTA)
-**States:** loading, rating-only (tip unavailable), rating-and-tip (tip available), already-submitted (redirect to booking detail), booking-not-completed (error)
+**Elements:** StarRatingInput, CommentTextarea, SubmitRatingButton, TipSection, TipAmountInput, TipPaymentMethodSelector, SubmitTipButton, TipWindowExpiryNotice
+**States:** loading, rating-pending, rating-submitted, tip-pending, tip-submitted, tip-window-expired (TIP_WINDOW_EXPIRED), already-rated (RATING_ALREADY_SUBMITTED)
 **Breakpoint:** both
 **i18n:** yes
-**Currency:** yes (tip amount display)
-**Note:** This screen is reached from both account dashboard and post-lesson email link (UC-007 email link alternate flow). Deep-link from email must authenticate user before rendering.
-
-### Customer / Account — Settings
-**Route:** /account/settings
-**UC:** UC-022
-**Elements:** language toggle (EN/FR — all tiers per OQ-030), email, phone, name fields, save button
-**States:** default, saved, error
-**Breakpoint:** both
-**i18n:** yes
-**Currency:** no
+**Currency:** yes
 
 ---
 
-## Instructor App Screens (PWA)
+### Customer / Waitlist Join
 
-### Instructor / Home — Today's Schedule
-**Route:** /schedule/today
-**UC:** UC-009, UC-011, UC-012, UC-013
-**Elements:** lesson card list, student name, skill level badge, lesson type label, meeting point, check-in CTA, no-show CTA, complete CTA, cancel CTA (own lessons per OQ-058), auto-complete notice badge
-**States:** empty, loading, checked-in, no-show, completed, auto-completed (system-completed — visual distinction for instructor awareness)
-**Breakpoint:** mobile
-**i18n:** yes
-**Currency:** no
-**Note (OQ-055):** Booking cards show status = confirmed only. No in_progress state displayed.
-**Note (OQ-058):** Cancel CTA present on instructor's own lesson cards.
-**Note (decisions.md 2026-03-29):** Auto-completed bookings show a badge indicating system completion at +2h; distinct from instructor-marked complete.
-
-### Instructor / Check-In
-**Route:** /schedule/:bookingId/checkin
-**UC:** UC-010
-**Elements:** student details (name, DOB, skill level, parental consent indicator for minors), confirm check-in CTA
-**States:** default, already-checked-in
-**Breakpoint:** mobile
-**i18n:** yes
-**Currency:** no
-**Note (OQ-052):** Smartwaiver embed deferred. No iframe, no 15s timer, no typed-name fallback in P0.
-**Note (OQ-055):** Check-in sets Booking.checkedInAt only; status remains confirmed.
-
-### Instructor / Session Notes
-**Route:** /schedule/:bookingId/notes
-**UC:** UC-012
-**Elements:** notes textarea, share-with-guest toggle, save button, prior notes list
-**States:** empty, saved, error
-**Breakpoint:** mobile
-**i18n:** yes
-**Currency:** no
-
-### Instructor / Availability Management
-**Route:** /availability
+**Route:** /waitlist/join
 **UC:** UC-008
-**Elements:** weekly calendar, recurring availability form (RRULE input), date-override form, slot list, block/unblock toggle
-**States:** loading, empty, conflict-error, invalid-RRULE error
-**Breakpoint:** mobile
+**Elements:** WaitlistModeSelector (time-slot / instructor), LessonTypeDisplay, DateDisplay, InstructorSelector, SubmitButton
+**States:** default, loading, success, already-on-waitlist
+**Breakpoint:** both
 **i18n:** yes
 **Currency:** no
 
 ---
 
-## Admin App Screens
+### Customer / Contact School Card
+
+**Route:** /booking/:id/cancel-info
+**UC:** UC-006
+**Elements:** SchoolContactDetails, PolicySummary, PhoneLink, EmailLink
+**States:** default
+**Breakpoint:** both
+**i18n:** yes
+**Currency:** no
+
+---
+
+## Admin App
+
+---
 
 ### Admin / Schedule View
-**Route:** /schedule
-**UC:** UC-014, UC-015
-**Elements:** drag-drop calendar, day/week/month switcher, instructor filter, lesson type filter, booking card, real-time update indicator, reassign modal
-**States:** loading, empty, conflict-blocked, real-time-update flash
+
+**Route:** /admin/schedule
+**UC:** UC-014
+**Elements:** DayWeekMonthToggle, InstructorLanes, BookingDragTarget, ConflictIndicator, DateNavigator, ReassignModal
+**States:** loading, populated, conflict (BOOKING_CONFLICT), empty-day
 **Breakpoint:** desktop
 **i18n:** yes
 **Currency:** no
 
-### Admin / Booking Management
-**Route:** /bookings
-**UC:** UC-021, UC-015, UC-019
-**Elements:** bookings table, filter bar (instructor, lesson type, date, status), weather bulk-cancel CTA, booking detail drawer, cancel CTA, bulk-cancel confirmation modal (affected count + refund total), create booking CTA
-**States:** loading, empty, bulk-cancel-confirm modal, bulk-cancel-processing
+---
+
+### Admin / Booking List
+
+**Route:** /admin/bookings
+**UC:** UC-014
+**Elements:** BookingTable, FilterBar (instructor, lesson type, date, status), CancelButton, BulkCancelButton, ExportButton
+**States:** loading, empty, populated, bulk-cancel-confirmation
 **Breakpoint:** desktop
 **i18n:** yes
 **Currency:** yes
 
-### Admin / Instructor Management — Staff Roster
-**Route:** /instructors
-**UC:** UC-016, UC-020
-**Elements:** instructor list, onboarding status badge, approve CTA, certification expiry alert badge, add instructor CTA
-**States:** loading, empty, pending-approval, expiry-warning, expired
+---
+
+### Admin / Booking Detail
+
+**Route:** /admin/bookings/:id
+**UC:** UC-014, UC-006
+**Elements:** BookingSummary, LearnerDetails, PaymentSummary, SessionNotesList, CancelButton, ReassignButton
+**States:** loading, populated
+**Breakpoint:** desktop
+**i18n:** yes
+**Currency:** yes
+
+---
+
+### Admin / Instructor Roster
+
+**Route:** /admin/instructors
+**UC:** UC-015
+**Elements:** InstructorTable, OnboardingStatusBadge, CertExpirySoonBadge, FilterBar, ApproveButton, AddInstructorButton
+**States:** loading, empty, populated, pending-approvals
 **Breakpoint:** desktop
 **i18n:** yes
 **Currency:** no
 
-### Admin / Instructor Management — Instructor Profile
-**Route:** /instructors/:id
-**UC:** UC-016, UC-020
-**Elements:** instructor details, certification list, add certification form, document upload, onboarding status controls, approve/deactivate CTA
-**States:** pending, approved, inactive, expiry-alert
+---
+
+### Admin / Instructor Detail
+
+**Route:** /admin/instructors/:id
+**UC:** UC-015
+**Elements:** ProfileForm, CertificationList, AddCertForm, WorkdayHandoffButton, ApproveButton, EarningsSummary
+**States:** loading, pending, approved, certification-expiry-warning
+**Breakpoint:** desktop
+**i18n:** yes
+**Currency:** yes
+
+---
+
+### Admin / Waitlist Panel
+
+**Route:** /admin/waitlist
+**UC:** UC-016
+**Elements:** WaitlistTable, FilterBar, PromoteButton, NotificationHistoryTooltip
+**States:** loading, empty, populated
 **Breakpoint:** desktop
 **i18n:** yes
 **Currency:** no
 
-### Admin / Lesson Configuration — Lesson Types
-**Route:** /config/lesson-types
+---
+
+### Admin / Lesson Type Configuration
+
+**Route:** /admin/lesson-types
 **UC:** UC-017
-**Elements:** lesson type list, create/edit form (nameEn, nameFr, category, price, capacity, skill levels, meeting point, cancellation policy selector), activate/deactivate toggle
-**States:** loading, empty, form-error
+**Elements:** LessonTypeTable, CreateLessonTypeForm, EditLessonTypeForm, DeactivateButton, CancellationPolicySelector
+**States:** loading, empty, populated
 **Breakpoint:** desktop
 **i18n:** yes
 **Currency:** yes
 
-### Admin / Lesson Configuration — Cancellation Policies
-**Route:** /config/cancellation-policies
-**UC:** UC-018
-**Elements:** policy list, create/edit form (refund rules builder: ordered rows of hours → refund%, no-show policy dropdown, no-show refund % conditional), set-as-default CTA
-**States:** loading, empty, form-error
+---
+
+### Admin / Cancellation Policy Configuration
+
+**Route:** /admin/cancellation-policies
+**UC:** UC-017
+**Elements:** PolicyList, CreatePolicyForm, EditPolicyForm, SetDefaultButton, DefaultBadge
+**States:** loading, empty, populated
 **Breakpoint:** desktop
+**i18n:** yes
+**Currency:** no
+
+---
+
+### Admin / Walk-Up Booking Form
+
+**Route:** /admin/walk-up
+**UC:** UC-021
+**Elements:** CustomerSearchInput, CreateCustomerForm (email, name, DOB, skill, language), LearnerConfirmationCard, SlotSelector, BookingConfirmButton
+**States:** loading, new-customer, existing-customer, booking-confirmed, payment-error
+**Breakpoint:** desktop
+**i18n:** yes
+**Currency:** yes
+
+---
+
+## Instructor App (PWA)
+
+---
+
+### Instructor / Today's Schedule
+
+**Route:** /schedule
+**UC:** UC-009, UC-013
+**Elements:** LessonCardList, DateNavigator, CheckInButton, CompleteButton, NoShowButton, EmptyStateIllustration
+**States:** loading, empty, populated, all-complete
+**Breakpoint:** mobile
+**i18n:** yes
+**Currency:** no
+
+---
+
+### Instructor / Lesson Detail
+
+**Route:** /schedule/:bookingId
+**UC:** UC-009, UC-010, UC-011, UC-012
+**Elements:** StudentInfoCard, SkillLevelBadge, MeetingPointDisplay, PriorNotesList, AddNoteButton, CheckInButton, CompleteButton, NoShowButton
+**States:** loading, pre-checkin, checked-in, completed, no-show
+**Breakpoint:** mobile
+**i18n:** yes
+**Currency:** no
+
+---
+
+### Instructor / Session Notes
+
+**Route:** /schedule/:bookingId/notes
+**UC:** UC-012
+**Elements:** NotesList, NoteComposer, ShareWithStudentToggle, SubmitButton
+**States:** loading, empty, populated, saving
+**Breakpoint:** mobile
+**i18n:** yes
+**Currency:** no
+
+---
+
+### Instructor / Availability Management
+
+**Route:** /availability
+**UC:** UC-023
+**Elements:** WeeklyGrid, RecurringRuleForm, DateOverrideForm, BlockDateButton, SaveButton
+**States:** loading, empty, populated, conflict-warning
+**Breakpoint:** mobile
 **i18n:** yes
 **Currency:** no
 
@@ -208,103 +333,108 @@
 
 ## Shared Components
 
-### BookingCard
-**Surfaces:** customer, admin, instructor
-**UC:** UC-003, UC-004, UC-009, UC-014
-**Variants:** upcoming, completed, cancelled, no-show
-**Note (OQ-055):** `in_progress` variant removed; status transitions directly from upcoming (confirmed) to completed or no-show.
-
-### InstructorProfileCard
-**Surfaces:** customer
-**UC:** UC-001
-**Variants:** compact (grid), expanded (modal); bio in user's selected language
+---
 
 ### LanguageToggle
-**Surfaces:** customer, instructor, admin — all tiers including Starter (OQ-030)
+
+**Surfaces:** customer, instructor, admin
 **UC:** UC-022
-**Variants:** header-inline, settings-page
+**Variants:** header-inline, settings-page, checkout-flow, guest-checkout-form
 
-### HoldCountdownTimer
-**Surfaces:** customer — all checkout steps (UC-002 through UC-005)
-**UC:** UC-002, UC-003, UC-004, UC-005
-**Variants:** active (green), warning (< 2 min, amber), expired (red + "slot expired" message)
+---
 
-### CancellationModal
-**Surfaces:** customer (authenticated only), admin, instructor (own lessons per OQ-058)
-**UC:** UC-006
-**Variants:** with-refund (shows refund amount), no-refund (shows "no refund" warning)
+### InstructorCard
 
-### ContactSchoolCard
-**Surfaces:** customer booking confirmation (guest-checkout path only)
-**UC:** UC-006 (alternate flow — OQ-033)
-**Variants:** inline (on confirmation screen)
-**Content:** school name, email, phone; shown only when guestCheckoutId is set on the booking
+**Surfaces:** customer
+**UC:** UC-001, UC-002
+**Variants:** compact (grid), expanded (profile), selected
 
-### RatingForm
+---
+
+### BookingSummaryCard
+
+**Surfaces:** customer, admin, instructor
+**UC:** UC-003, UC-004, UC-005, UC-014
+**Variants:** confirmation, list-item, detail
+
+---
+
+### HoldExpiryTimer
+
+**Surfaces:** customer
+**UC:** UC-001, UC-003
+**Variants:** active, expiring-soon (< 2 min), expired
+
+---
+
+### StarRatingInput
+
 **Surfaces:** customer
 **UC:** UC-007
-**Variants:** star-only, star-with-comment
+**Variants:** interactive, read-only, submitted
+
+---
 
 ### TipForm
+
 **Surfaces:** customer
 **UC:** UC-007
-**Variants:** card-on-file (one-click), new-card-entry
-**Note:** Conditional component — rendered only if tip feature is retained after OQ-043 conflict resolution. Separate from RatingForm; rendered below rating after rating is submitted.
+**Variants:** default, submitted, window-expired
 
-### CertificationExpiryBadge
-**Surfaces:** admin
-**UC:** UC-020
-**Variants:** valid, expiring-soon (< 60 days, amber), expired (red)
+---
 
-### RefundRulesBuilder
-**Surfaces:** admin
-**UC:** UC-018
-**Variants:** default (read-only), custom (editable ordered rows)
+### ContactSchoolCard
 
-### ParentalConsentCheckbox
-**Surfaces:** customer authentication gate, instructor check-in
-**UC:** UC-003, UC-005, UC-010
-**Variants:** inline-checkout, check-in-screen
-**Behaviour:** displayed only when learner age < 18; disables continue CTA until checked
+**Surfaces:** customer
+**UC:** UC-006
+**Variants:** cancel-blocked (guest), generic-support
+
+---
+
+### ProcessorSDKEmbed
+
+**Surfaces:** customer, admin
+**UC:** UC-003, UC-004, UC-005, UC-021
+**Variants:** stripe-elements, shift4-embed
+
+---
+
+### CertificationBadge
+
+**Surfaces:** customer, admin, instructor
+**UC:** UC-002, UC-015
+**Variants:** valid, expiring-soon, expired
 
 ---
 
 ## Design Tokens Needed
 
-- `color-hold-warning` — amber (#F59E0B) — HoldCountdownTimer warning state (< 2 min)
-- `color-hold-expired` — red (#EF4444) — HoldCountdownTimer expired state
-- `color-expiry-critical` — red (#EF4444) — CertificationExpiryBadge expired
-- `color-expiry-warning` — amber (#F59E0B) — CertificationExpiryBadge expiring-soon
-- `color-onboarding-pending` — yellow-500 — Staff Roster onboarding status badge
-- `color-no-show` — gray-400 — BookingCard no-show variant
-- `color-minor-consent-required` — orange-400 — ParentalConsentCheckbox highlight when required
-- `radius-card-lesson` — 12px — lesson cards across all surfaces
-- `shadow-booking-card` — medium elevation — booking cards on mobile
-- `font-size-currency-display` — 24px / semibold — price display in Booking Summary and Payment
-- `spacing-mobile-touch-target` — 48px min height — all primary CTAs on mobile
-- `color-instructor-available` — green-500 — availability indicator in Date & Time Picker
-- `color-instructor-unavailable` — gray-300 — unavailable slot indicator
+- `--color-hold-expiry-warning` — amber; used in HoldExpiryTimer (expiring-soon state)
+- `--color-no-show-indicator` — muted red; used in Instructor / Today's Schedule no-show state
+- `--color-booking-complete` — green; used in Instructor / Lesson Detail completed state
+- `--color-conflict-indicator` — red; used in Admin / Schedule View conflict state
+- `--color-cert-expiry-warning` — amber; used in CertificationBadge expiring-soon
+- `--spacing-card-compact` — 12px; InstructorCard compact grid variant
+- `--font-size-rating-star` — 24px; StarRatingInput interactive
+- `--duration-hold-timer` — animation: countdown from 15 min; HoldExpiryTimer
 
 ---
 
 ## Asset Checklist
 
-- [ ] Screens: 10 (customer app — +1 post-lesson review screen)
-- [ ] Screens: 4 (instructor PWA)
-- [ ] Screens: 6 (admin app)
-- [ ] Shared components: 11 (+1 TipForm — conditional on OQ-043 resolution)
-- [ ] Icons: 8 (star-filled, star-empty, check-in, no-show, cancel, complete, expiry-warning, expiry-critical)
-- [ ] Email templates: 6 EN + 6 FR (booking confirmation, cancellation, instructor change, no-show alert, post-lesson review prompt, 24h reminder)
-- [ ] SMS templates: 2 EN + 2 FR (booking confirmation, cancellation)
-- [ ] Empty state illustrations: 3 (no lessons today — instructor, no bookings — customer, no results — admin)
-- [ ] Processor JS SDK integration: 2 (Stripe Elements, Shift4 embed)
-- [ ] .ics calendar attachment generator: 1
+- [ ] Screens: 13 (customer app)
+- [ ] Screens: 9 (admin app)
+- [ ] Screens: 4 (instructor app — PWA)
+- [ ] Shared components: 9
+- [ ] Icons: booking status icons (confirmed, completed, cancelled, no_show), skill level icons (beginner, intermediate, advanced), language toggle icon, certification badge icons — est. 14
+- [ ] Empty state illustrations: 4 (no availability, no upcoming lessons, today's schedule empty, no waitlist entries)
+- [ ] Email templates: 7 EN + 7 FR (booking.confirmed, booking.cancelled, booking.completed post-lesson, waitlist.slot_available, booking.reminder, lesson.weather_cancel, instructor.cert_expiry)
+- [ ] SMS templates: 3 EN + 3 FR (booking.confirmed, booking.cancelled, booking.reminder)
 
 ---
 
 ## UX Flows Missing a Screen
 
-- ux-flows.md §1 — "Join waitlist" node has no customer-facing screen defined (P1 feature; deferred)
-- ux-flows.md §3 — "Sync with Google Calendar" listed in Availability Management; deferred to v1.5 (OQ-021); no screen needed
-- ux-flows.md §3 — "Tips (if applicable)" listed in Earnings Dashboard; removed from all plans (OQ-043); no screen needed
-- ux-flows.md §5 — Operator portal screens not included in P0 scope; deferred to P2
+- ux-flows.md §3 "Sync with Google Calendar (optional)" — deferred v1.5 (OQ-021); no screen in P0
+- ux-flows.md §3 "Tips (if applicable)" under Instructor Earnings Dashboard — tips are customer-submitted (TipForm on Customer / Post-Lesson Review); Instructor Earnings Dashboard is P1; no P0 screen needed for instructor tip view
+- ux-flows.md §3 "optional digital signature" at check-in — Smartwaiver deferred (OQ-052); no digital signature screen in P0; Instructor / Lesson Detail check-in button proceeds without signature

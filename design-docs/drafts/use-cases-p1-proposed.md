@@ -1,415 +1,221 @@
-# Slopebook — Use Cases (P1 / P2)
+# Slopebook — Use Cases P1 / P2
 
-**Document Status:** Draft — Generate Pipeline Run 8
+**Document Status:** Draft — Generate Pipeline Run 10
 **Last Updated:** 2026-04-04
-**Author:** Product-Lead Agent
-**Scope:** P1 (Beta — Q3 2026) and P2 (v1.0 GA — Q4 2026) use cases only
+**Pipeline:** pipeline-generate.yaml
+**Sources:** overview.md, ux-flows.md, uc-registry.md, decisions.md
 
 ---
 
-## P1 — Beta Use Cases
+## P1 — Beta Scope (Q3 2026)
 
 ---
 
-## UC-023 — Manage learner sub-profiles
+## UC-024 — Purchase lesson package
 
 **Persona:** Head of Household
-**Goal:** Add, edit, or remove learner sub-profiles in a household account.
+**Goal:** Buy a multi-lesson package at a discounted rate for a household learner
 **Preconditions:**
-- User is signed in; Household exists.
-
+- Household authenticated; lesson packages enabled for tenant
 **Main Flow:**
-1. User opens household management in account settings.
-2. User adds a new Learner (firstName, lastName, dateOfBirth, skillLevel).
-3. If age < 18 → parentalConsentGiven required at profile creation (OQ-032).
-4. User edits an existing Learner's skill level or name.
-5. User attempts to delete a Learner; system checks for active bookings.
-6. If Learner has active bookings → 409 LEARNER_HAS_ACTIVE_BOOKINGS; deletion blocked (OQ-036).
-
+1. Student selects lesson package from catalog (GET /api/v1/lesson-packages — P1 endpoint)
+2. System displays package details: totalCount, priceAmountCents, currency, expiresAt
+3. Student selects learner and payment method; confirms purchase
+4. Payment Service captures charge (Payment.paymentType = package_purchase; Payment.lessonPackageId set)
+5. LessonPackage created with remainingCount = totalCount; 1.5% platform fee applied (OQ-027)
 **Alternate Flows:**
-- Admin overrides skill level → logged in AuditLog per OQ-020.
-
+- Package expires with unused credits: credits forfeited; admin can extend expiresAt manually (OQ-025)
+- Package-redeemed booking cancelled: within window reinstates credit; outside window forfeits credit (OQ-039)
 **Postconditions:**
-- Learner added/updated; deletion blocked if active bookings exist.
-
+- LessonPackage created; Payment.paymentType = package_purchase
 **Priority:** P1
 
 ---
 
-## UC-024 — Purchase a lesson package
+## UC-025 — Apply package credit at checkout
 
-**Persona:** Guest (signed-in) / Head of Household
-**Goal:** Buy a multi-lesson package at a discounted rate.
+**Persona:** Head of Household
+**Goal:** Redeem a lesson package credit when booking a lesson for the eligible learner
 **Preconditions:**
-- User is authenticated; Household exists.
-- LessonPackage product exists and is active.
-
+- LessonPackage.remainingCount > 0; not expired; lessonTypeId matches package
 **Main Flow:**
-1. User selects a lesson package from the catalog.
-2. System shows package price; 1.5% platform fee applied at purchase (OQ-027).
-3. User selects payment method and confirms purchase.
-4. LessonPackage and initial PackageRedemption records created; LessonPackage.remainingCount set.
-5. Confirmation email sent.
-
+1. At checkout, system detects eligible package; offers redemption option
+2. Student selects "Use Package Credit"
+3. On booking confirmation: PackageRedemption created; LessonPackage.remainingCount decremented by 1
+4. No Payment charge for booking (covered by package)
 **Alternate Flows:**
-- Package expires before all credits used → remaining credits forfeited (OQ-025); admin can extend expiresAt manually.
-
+- No eligible package: standard payment flow proceeds
 **Postconditions:**
-- LessonPackage.remainingCount set; package credits available for booking.
-
+- PackageRedemption created; LessonPackage.remainingCount updated
 **Priority:** P1
 
 ---
 
-## UC-025 — Switch payment processor
+## UC-026 — Book group lesson
 
-**Persona:** Resort Operator / School Admin
-**Goal:** Change the tenant's active payment processor from Stripe to Shift4 or vice versa.
+**Persona:** Head of Household
+**Goal:** Book a group lesson for one or more learners with per-learner skill level selection
 **Preconditions:**
-- Operator is signed in with operator role.
-- New processor credentials are available.
-
+- GroupSession exists with available capacity; learners meet skill level requirements
 **Main Flow:**
-1. Operator navigates to Payment Processor Configuration.
-2. Operator selects the new processor and enters credentials (encrypted at rest per OQ-046).
-3. System updates Tenant.paymentProcessor and Tenant.paymentCredentials.
-4. System marks all existing PaymentMethod records for this tenant with isValid = false (OQ-004).
-
+1. Student selects group lesson from availability results
+2. Student selects learner(s) and confirms per-learner skillLevel
+3. For each learner: system creates Booking linked to GroupSession; GroupSession.currentCapacity incremented
+4. Payment captured per learner
 **Alternate Flows:**
-- In-flight refunds on old processor → resolved manually by operator (OQ-035).
-- Old processor webhooks fail HMAC → resolved manually (OQ-035).
-
+- Group session full: student offered waitlist
+- One learner's payment fails: other learners' bookings not affected
 **Postconditions:**
-- Tenant.paymentProcessor updated; old card vault tokens invalidated.
-
+- Booking created per learner; GroupSession.currentCapacity updated
 **Priority:** P1
 
 ---
 
-## UC-026 — Process a right-to-erasure request
+## UC-027 — Group lesson roster management
 
-**Persona:** School Admin (acting on customer request)
-**Goal:** Delete or anonymise all PII associated with a user or guest checkout record.
+**Persona:** Instructor / School Admin
+**Goal:** Manage the roster for a group lesson and check in students individually
 **Preconditions:**
-- Admin is signed in; target entity (User, GuestCheckout) is identified.
-
+- GroupSession exists; instructor assigned
 **Main Flow:**
-1. Admin locates the User or GuestCheckout in admin tools.
-2. System checks for active bookings → if any exist, block erasure until bookings conclude.
-3. Admin confirms; system anonymises all PII fields (email, name, phone, dateOfBirth) on User, Household, Learner, GuestCheckout.
-4. Booking records retain anonymised references for financial reporting (OQ-026).
-5. Smartwaiver document deletion not in scope for v1.0 (OQ-045).
-
-**Postconditions:**
-- PII anonymised across all linked records; audit trail retained.
-
-**Priority:** P1
-
----
-
-## UC-027 — Join waitlist (time-slot mode)
-
-**Persona:** Guest / Head of Household
-**Goal:** Join a waitlist for a specific date and time when no slots are available.
-**Preconditions:**
-- No availability exists for the requested date/time/lesson type combination.
-
-**Main Flow:**
-1. Guest sees empty availability state and taps Join Waitlist.
-2. Guest selects mode = time_slot; provides email (or uses Learner for authenticated path).
-3. System creates WaitlistEntry with status = waiting, position = null (FIFO end of queue).
-4. When a slot opens: system notifies guest via email; sets WaitlistEntry.notifiedAt and opens acceptance window (Tenant.waitlistAcceptWindowMinutes, default 120).
-
+1. Instructor views GroupSession roster (all Bookings linked to groupSessionId)
+2. Instructor checks in each student individually (PATCH /api/v1/bookings/:id/checkin per learner)
+3. Instructor marks session complete (PATCH /api/v1/bookings/:id/complete for each booking or group-level complete)
 **Alternate Flows:**
-- No one on waitlist accepts → nothing happens; slot released back to general availability (OQ-034).
-
+- Student no-show: PATCH /api/v1/bookings/:id/no-show for that learner only
+- Admin cancels group session: cascade cancel all enrolled bookings; full refunds (OQ-051)
 **Postconditions:**
-- WaitlistEntry.status = waiting; guest receives notification when slot opens.
-
+- All bookings updated; GroupSession.status = completed
 **Priority:** P1
 
 ---
 
-## UC-028 — Join waitlist (instructor-specific mode)
-
-**Persona:** Guest / Head of Household
-**Goal:** Join a waitlist specifically for a chosen instructor, regardless of time slot.
-**Preconditions:**
-- Preferred instructor has no availability on target date.
-
-**Main Flow:**
-1. Guest selects preferred instructor and taps Notify Me.
-2. System creates WaitlistEntry with mode = instructor, targetInstructorId set.
-3. When instructor's availability opens → notification sent; acceptance window opens.
-
-**Postconditions:**
-- WaitlistEntry linked to specific instructor; notified when that instructor has a slot.
-
-**Priority:** P1
-
----
-
-## UC-029 — Accept a waitlist offer
-
-**Persona:** Guest / Head of Household
-**Goal:** Claim a slot after receiving a waitlist notification.
-**Preconditions:**
-- WaitlistEntry.status = notified; acceptance window has not expired.
-
-**Main Flow:**
-1. Guest receives notification email with one-click accept link.
-2. Guest taps accept; system creates SlotReservation and redirects to payment (UC-003 or UC-004).
-3. On payment success: WaitlistEntry.status = accepted; slot confirmed.
-
-**Alternate Flows:**
-- Acceptance window expires → WaitlistEntry.status = expired; slot offered to next entry in FIFO order (OQ-034).
-
-**Postconditions:**
-- WaitlistEntry.status = accepted; Booking created.
-
-**Priority:** P1
-
----
-
-## UC-030 — Admin manages waitlist
-
-**Persona:** School Admin
-**Goal:** View, reorder, or manually promote waitlisted customers.
-**Preconditions:**
-- Admin is signed in; active WaitlistEntry records exist.
-
-**Main Flow:**
-1. Admin opens Waitlist Panel; views all active waitlist entries filterable by type, date, status.
-2. Admin manually promotes a specific entry (PATCH /api/v1/waitlist/:id/promote); system notifies that guest first regardless of FIFO order.
-3. Admin can reorder entries by updating WaitlistEntry.position.
-4. Admin views notification history (notifiedAt, whether accepted).
-
-**Postconditions:**
-- WaitlistEntry.position updated; promotion notification sent.
-
-**Priority:** P1
-
----
-
-## UC-031 — Create and manage a group session
-
-**Persona:** School Admin
-**Goal:** Create a group lesson session and manage its roster.
-**Preconditions:**
-- Admin is signed in; LessonType with category = group exists and is active.
-
-**Main Flow:**
-1. Admin creates a GroupSession (lessonTypeId, instructorId, startAt, endAt, maxCapacity, meetingPoint).
-2. GroupSession.status = open; session is bookable by customers.
-3. As customers book, GroupSession.currentCapacity increments; at maxCapacity status = full.
-
-**Postconditions:**
-- GroupSession available for customer enrollment (UC-032).
-
-**Priority:** P1
-
----
-
-## UC-031a — Cascade-cancel a group session
-
-**Persona:** School Admin
-**Goal:** Cancel an entire group session and issue full refunds to all enrolled students.
-**Preconditions:**
-- GroupSession.status ∈ {open, full}; at least one confirmed Booking exists.
-
-**Main Flow:**
-1. Admin selects the group session and taps Cancel Session.
-2. System shows confirmation modal with count of affected bookings and total refund amount.
-3. Admin confirms; system sets GroupSession.status = cancelled; GroupSession.cancelledAt = now.
-4. System cancels all enrolled Bookings (status = cancelled).
-5. Full refund issued for each Booking regardless of snapshot CancellationPolicy — company-initiated cancellation always refunds in full (OQ-051).
-6. Cancellation emails sent to all enrolled students with refund confirmation.
-
-**Alternate Flows:**
-- Partial refund already issued on a booking → remaining amountCents refunded.
-
-**Postconditions:**
-- All Bookings cancelled; full refunds issued; students notified.
-
-**Priority:** P1
-
----
-
-## UC-032 — Enroll in a group session
-
-**Persona:** Guest / Head of Household
-**Goal:** Book a spot in an open group lesson session.
-**Preconditions:**
-- GroupSession.status = open (currentCapacity < maxCapacity).
-- Guest meets skill level requirement.
-
-**Main Flow:**
-1. Guest browses group sessions and selects an open one.
-2. Flow follows UC-003 (guest) or UC-004 (authenticated) for payment.
-3. System links Booking.groupSessionId and increments GroupSession.currentCapacity.
-4. If currentCapacity reaches maxCapacity after this booking → GroupSession.status = full.
-
-**Postconditions:**
-- Booking confirmed; group session capacity updated.
-
-**Priority:** P1
-
----
-
-## UC-033 — Cancel a package-redeemed booking
-
-**Persona:** Guest (signed-in) / Head of Household
-**Goal:** Cancel a booking that was paid for using a lesson package credit.
-**Preconditions:**
-- Booking was created via PackageRedemption; Booking.status = confirmed.
-
-**Main Flow:**
-1. User cancels via account dashboard (same UC-006 flow).
-2. System checks cancellation timing against snapshot CancellationPolicy refund window.
-3. Within refund window → LessonPackage.remainingCount incremented (credit reinstated) (OQ-039).
-4. Outside refund window → credit forfeited; no reinstatement.
-
-**Postconditions:**
-- Booking cancelled; credit reinstated or forfeited per policy.
-
-**Priority:** P1
-
----
-
-## UC-034 — View instructor earnings
+## UC-028 — Instructor views earnings
 
 **Persona:** Instructor
-**Goal:** See earnings summary broken down by lesson type and period.
+**Goal:** View daily, weekly, and seasonal earnings summary with breakdown by lesson type
 **Preconditions:**
-- Instructor is signed in; completed bookings exist.
-
+- Instructor authenticated; at least one completed booking exists
 **Main Flow:**
-1. Instructor opens Earnings Dashboard.
-2. System returns completed Bookings with payment amounts for this InstructorTenant.
-3. Instructor views breakdown by lesson type, day, week, and season.
-4. Instructor can trigger Workday payroll handoff (admin can also trigger per UC-035).
-
+1. Instructor opens Earnings Dashboard; system calls GET /api/v1/instructors/:id/earnings
+2. System returns earnings summary: total by period, breakdown by lesson type
+3. Instructor views seasonal totals and upcoming Workday handoff date
+**Alternate Flows:**
+- Admin triggers Workday handoff: POST /api/v1/instructors/:id/workday-handoff (school_admin only)
 **Postconditions:**
-- Read-only summary displayed; no state change.
-
+- No state change; read-only summary
 **Priority:** P1
 
 ---
 
-## UC-035 — Admin triggers Workday payroll handoff
+## UC-029 — Admin revenue and utilization reporting
 
 **Persona:** School Admin
-**Goal:** Export instructor earnings data to Workday for payroll processing.
+**Goal:** View revenue by instructor/lesson type/period and instructor utilization rates; export to CSV
 **Preconditions:**
-- Admin is signed in; period to export is defined.
-
+- Admin authenticated with school_admin role; completed bookings exist
 **Main Flow:**
-1. Admin selects instructor and pay period; taps Workday Handoff.
-2. System creates WorkdayHandoff record (status = pending) with earningsSnapshotJson.
-3. System delivers payload to Workday integration; updates status = delivered.
-4. On failure: status = failed; admin retries manually.
-
+1. Admin opens Reports; selects Revenue or Utilization report type
+2. Admin sets date range and optional instructor/lesson type filters
+3. System returns report (GET /api/v1/reports/revenue or /utilization)
+4. Admin exports to CSV: GET /api/v1/reports/export?type=revenue|utilization&from=&to=
+**Alternate Flows:**
+- Student analytics view: GET /api/v1/reports/students for repeat rate and avg spend
 **Postconditions:**
-- WorkdayHandoff record created; earnings data delivered or flagged for retry.
-
+- No state change; report displayed and optionally downloaded
 **Priority:** P1
 
 ---
 
-## P2 — v1.0 GA Use Cases
-
----
-
-## UC-036 — Configure white-label booking widget
+## UC-030 — Operator configures resort portal
 
 **Persona:** Resort Operator
-**Goal:** Customise the booking widget with resort branding and deploy it on the resort website.
+**Goal:** Configure white-label booking widget, currency, language defaults, and payment processor for a resort
 **Preconditions:**
-- Operator is signed in with operator role; Enterprise tier.
-
+- Operator authenticated with operator role; resort tenant created
 **Main Flow:**
-1. Operator uploads logo, sets primary/secondary color, font, custom domain.
-2. System saves WhiteLabelConfig; generates embed snippet and embedCodeToken.
-3. Operator copies iframe embed code and adds it to resort website.
-4. Custom domain is verified; domainVerified = true.
-
+1. Operator opens Operator Portal; selects resort school
+2. Operator configures white-label: custom domain, logo, colors (WhiteLabelConfig)
+3. Operator sets currency (USD or CAD) and defaultLanguage (EN or FR)
+4. Operator selects payment processor and enters encrypted credentials
+5. Operator copies booking widget embed snippet
+**Alternate Flows:**
+- Processor switch mid-season: in-flight transactions resolved manually (OQ-035)
+- Starter tier: Stripe only; Shift4 option not shown (OQ-005)
 **Postconditions:**
-- Booking widget renders with resort branding at custom domain.
-
-**Priority:** P2
+- Tenant configuration updated; booking widget reflects new branding
+**Priority:** P1
 
 ---
 
-## UC-037 — Manage API keys
+## UC-031 — Book recurring weekly lesson
 
-**Persona:** Resort Operator / School Admin
-**Goal:** Create and revoke API keys for third-party integrations.
+**Persona:** Head of Household
+**Goal:** Book a recurring weekly lesson for a multi-week program without rebooking each week manually
 **Preconditions:**
-- Operator or admin is signed in.
-
+- Instructor has recurring availability configured (UC-023); lesson type supports recurrence
 **Main Flow:**
-1. Operator creates API key with label and scopes.
-2. System returns key on creation only (stored as keyHash; not re-displayable).
-3. Operator revokes a key → ApiKey.isActive = false, revokedAt = now.
-
+1. Student selects recurrence option at checkout: weekly for N weeks
+2. System creates one Booking per occurrence; each linked to a separate SlotReservation
+3. Payment captured per booking or as a single lump charge
+4. Confirmation sent with all occurrence dates
+**Alternate Flows:**
+- Cancel individual occurrence: PATCH /api/v1/bookings/:id/cancel for that booking only; series not affected
+- Instructor unavailable on one week: that occurrence not created; student notified
 **Postconditions:**
-- ApiKey created or revoked; external consumer can authenticate using key.
-
-**Priority:** P2
+- N Bookings created (one per week); confirmations sent
+**Priority:** P1
 
 ---
 
-## UC-038 — Configure webhooks
-
-**Persona:** Resort Operator / School Admin
-**Goal:** Register a webhook endpoint to receive booking events.
-**Preconditions:**
-- Operator or admin is signed in.
-
-**Main Flow:**
-1. Operator enters webhook URL (stored encrypted) and selects events.
-2. System saves signingSecret (encrypted); delivers HMAC-signed payloads on events.
-3. On repeated failure: Webhook.failureCount increments; admin alerted.
-
-**Postconditions:**
-- Webhook active; events delivered to registered URL.
-
-**Priority:** P2
+## P2 — v1.0 GA Scope (Q4 2026)
 
 ---
 
-## UC-039 — Access revenue analytics
-
-**Persona:** School Admin / Resort Operator
-**Goal:** View revenue, utilisation, and student analytics for business decision-making.
-**Preconditions:**
-- Admin or operator is signed in; completed bookings exist.
-
-**Main Flow:**
-1. Admin opens Reporting section; selects report type (revenue, utilisation, students).
-2. Admin applies date range and optional filters (instructorId, lesson type).
-3. System returns report data; admin can export to CSV.
-
-**Postconditions:**
-- Report viewed or downloaded; no state change.
-
-**Priority:** P2
-
----
-
-## UC-040 — Operator configures resort policies
+## UC-032 — Operator views aggregated analytics
 
 **Persona:** Resort Operator
-**Goal:** Set resort-wide defaults for currency, language, and cancellation policy.
+**Goal:** View consolidated revenue and utilization dashboards across all schools in the resort
 **Preconditions:**
-- Operator is signed in.
-
+- Operator authenticated; multiple schools exist under tenant
 **Main Flow:**
-1. Operator sets Tenant.currency, Tenant.defaultLanguage.
-2. Operator selects default CancellationPolicy (seeded at tenant creation per OQ-014).
-3. Operator configures Tenant.waitlistAcceptWindowMinutes.
-
+1. Operator opens Multi-School Dashboard
+2. System returns aggregated revenue and utilization across all schools
+3. Operator exports consolidated financial report (GET /api/v1/reports/export with multi-school scope)
 **Postconditions:**
-- Tenant configuration updated; all new lesson types inherit defaults.
+- No state change; read-only dashboard
+**Priority:** P2
 
+---
+
+## UC-033 — Integrations: webhooks and Google Calendar
+
+**Persona:** Resort Operator / Instructor
+**Goal:** Connect Slopebook to external systems via webhooks (PMS, CRM, marketing) and sync instructor schedule to Google Calendar
+**Preconditions:**
+- Operator authenticated (webhooks); Instructor authenticated (Google Calendar)
+**Main Flow (Webhooks):**
+1. Operator configures webhook: URL, events, signingSecret (Webhook entity)
+2. System delivers events to webhook URL on each trigger
+**Main Flow (Google Calendar):**
+1. Instructor connects Google account via OAuth (OAuthToken entity — deferred to v1.5 per OQ-021)
+2. System syncs confirmed bookings to instructor's Google Calendar
+**Postconditions:**
+- Webhook registered and active; Calendar synced
+**Priority:** P2
+
+---
+
+## UC-034 — Admin views student analytics
+
+**Persona:** School Admin
+**Goal:** Review repeat booking rate and average spend per student to identify high-value customers
+**Preconditions:**
+- Admin authenticated; sufficient booking history exists
+**Main Flow:**
+1. Admin opens Student Analytics report (GET /api/v1/reports/students)
+2. System returns repeat rate and average spend metrics
+3. Admin exports: GET /api/v1/reports/export?type=students
+**Postconditions:**
+- No state change; read-only
 **Priority:** P2

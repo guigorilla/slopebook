@@ -34,6 +34,7 @@ PATCH  /api/v1/me                         Update current user profile (includes 
 
 POST   /api/v1/users                      Admin creates User account for walk-up customer (school_admin)
                                           Atomically creates User + Household + Learner sub-profile
+                                          Returns { userId, householdId, learnerId } for immediate use in booking
 
 GET    /api/v1/households/:id             Get household with learner sub-profiles
 POST   /api/v1/households                 Create a household
@@ -133,7 +134,7 @@ The authoritative service for all reservations. All booking requests — from cu
 POST   /api/v1/slot-reservations          Create soft-hold SlotReservation; returns sessionToken + expiresAt  [PUBLIC]
 POST   /api/v1/guest-checkouts            Create GuestCheckout record  [PUBLIC]
        Required: email, firstName, lastName, learnerDateOfBirth, skillLevel, preferredLanguage
-       Conditional: parentalConsentGiven required if age < 18
+       Conditional: parentalConsentGiven required if learnerDateOfBirth indicates age < 18
 
 POST   /api/v1/bookings                   Create a booking (triggers payment)
 GET    /api/v1/bookings/:id               Get booking detail
@@ -154,8 +155,8 @@ GET    /api/v1/bookings/:id/notes         List session notes for booking
 
 POST   /api/v1/bookings/:id/review        Submit rating after lesson completion
 POST   /api/v1/bookings/:id/tip           [PCI] Submit optional tip; requires Booking.status = completed;
-                                          window: 48 hours after Booking.endAt; one tip per booking enforced
-                                          by unique partial index; Idempotency-Key header required
+                                          window: 48 hours after Booking.endAt; one tip per booking;
+                                          Idempotency-Key header required
 
 GET    /api/v1/waitlist                   List waitlist entries (school_admin)
 POST   /api/v1/waitlist                   Join a waitlist  [PUBLIC or authenticated]
@@ -222,7 +223,7 @@ Server-side: exactly one of `learnerId` / `guestCheckoutId` must be non-null. `p
   "paymentMethodId": "uuid"
 }
 ```
-Server-side enforcement: `Booking.status` must be `completed`; request must arrive within 48 hours of `Booking.endAt`; `Idempotency-Key` header required; unique partial index on `Payment(bookingId, paymentType) WHERE paymentType = 'tip'` prevents duplicate tip charges at the database layer.
+Server-side enforcement: `Booking.status` must be `completed` (BOOKING_NOT_COMPLETED if not); request must arrive within 48 hours of `Booking.endAt` (TIP_WINDOW_EXPIRED if outside); `Idempotency-Key` header required; unique partial index on `Payment(bookingId, paymentType) WHERE paymentType = 'tip'` prevents duplicate charges at the database layer.
 
 **Reassign request payload:**
 ```json
@@ -342,38 +343,3 @@ Tenant is always resolved from the JWT — it is never accepted as a client-supp
 - Responses include `X-Request-ID` header for tracing
 - Idempotency keys supported on `POST /api/v1/bookings`, `POST /api/v1/payments/charge`, and `POST /api/v1/bookings/:id/tip`
 
----
-
-## API Change Summary — Run 9 (2026-04-04)
-
-**Added:** 18 endpoints
-- `POST /api/v1/slot-reservations`
-- `POST /api/v1/guest-checkouts`
-- `PATCH /api/v1/bookings/:id/checkin`
-- `PATCH /api/v1/bookings/:id/reassign` (with documented request + response payloads — OQ-066)
-- `POST /api/v1/bookings/bulk-cancel`
-- `GET /api/v1/bookings/:id/notes`
-- `POST /api/v1/bookings/:id/tip` (with status guard, 48h window, idempotency key — CR-002/CR-003 Run 9)
-- `GET /api/v1/cancellation-policies`
-- `POST /api/v1/cancellation-policies`
-- `PATCH /api/v1/cancellation-policies/:id`
-- `PATCH /api/v1/cancellation-policies/:id/default`
-- `POST /api/v1/users`
-- `POST /api/v1/auth/forgot-password`
-- `POST /api/v1/auth/reset-password`
-- `GET /api/v1/instructors/:id/certifications`
-- `POST /api/v1/instructors/:id/certifications`
-- `PATCH /api/v1/instructors/:id/certifications/:certId`
-- `GET /api/v1/instructors/:id/earnings` (previously undocumented detail added)
-
-**Fixed:** 6
-- `POST /api/v1/bookings/:id/review` — removed tip reference (tip is a separate endpoint)
-- `POST /api/v1/auth/register` — documented required fields and payload
-- `GET /api/v1/availability` — added `age` and `skillLevel` filter params
-- Booking payload `learnerId` — changed to `"uuid | null"` to support guest checkout path (CR-001 Run 9)
-- Booking payload `paymentMethodId` — changed to `"uuid | null"` for guest checkout processor SDK path
-- `PATCH /api/v1/bookings/:id/reassign` — documented request and response payloads (OQ-066)
-
-**Deprecated:** 0
-
-**Unchanged:** 29 endpoints
