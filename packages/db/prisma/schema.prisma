@@ -1,13 +1,159 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Slopebook — Prisma Schema
+// Slice 1: Identity & Tenant Foundation
 
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../generated/prisma"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Currency {
+  USD
+  CAD
+}
+
+enum Language {
+  en
+  fr
+}
+
+enum PaymentProcessor {
+  stripe
+  shift4
+}
+
+enum SubscriptionTier {
+  starter
+  growth
+  pro
+  enterprise
+}
+
+enum UserRole {
+  guest
+  instructor
+  school_admin
+  operator
+  platform_admin
+}
+
+enum SkillLevel {
+  beginner
+  intermediate
+  advanced
+}
+
+model Tenant {
+  id                 String           @id @default(uuid())
+  name               String
+  slug               String           @unique
+  currency           Currency         @default(USD)
+  defaultLanguage    Language         @default(en)
+  paymentProcessor   PaymentProcessor @default(stripe)
+  paymentCredentials Json?
+  subscriptionTier   SubscriptionTier @default(starter)
+  isActive           Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  users              User[]
+  households         Household[]
+
+  @@map("tenants")
+}
+
+model User {
+  id                String     @id @default(uuid())
+  tenantId          String?
+  email             String     @unique
+  emailVerified     DateTime?
+  passwordHash      String?
+  role              UserRole   @default(guest)
+  preferredLanguage Language   @default(en)
+  isActive          Boolean    @default(true)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  tenant            Tenant?    @relation(fields: [tenantId], references: [id])
+  household         Household? @relation("HouseholdOwner")
+  accounts          Account[]
+  sessions          Session[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String   @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Household {
+  id        String    @id @default(uuid())
+  tenantId  String
+  ownerId   String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  owner     User      @relation("HouseholdOwner", fields: [ownerId], references: [id])
+  learners  Learner[]
+
+  @@map("households")
+}
+
+model Learner {
+  id          String     @id @default(uuid())
+  householdId String
+  firstName   String
+  lastName    String
+  dateOfBirth DateTime?
+  skillLevel  SkillLevel @default(beginner)
+  notes       String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  household   Household  @relation(fields: [householdId], references: [id])
+
+  @@map("learners")
 }
