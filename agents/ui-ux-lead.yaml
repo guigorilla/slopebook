@@ -3,7 +3,7 @@ description: >
   Produces a lean asset list of required screens, components, and design
   assets for P0 use cases only across all four app surfaces.
 
-model: claude-sonnet-4-5
+model_class: standard
 temperature: 0.4
 
 system_prompt: |

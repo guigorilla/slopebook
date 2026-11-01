@@ -1,0 +1,13 @@
+# Agent model policy. Specs name a model_class; only this file names models.
+# Changing a model here is a Tier 3 change. See design-docs/agent-pipeline.md.
+
+model_classes:
+  deep:
+    model: claude-opus-5-5
+    use: Orchestration, code review, security, complex implementation
+  standard:
+    model: claude-sonnet-5-5
+    use: Design documents, implementation, tests, planning
+  fast:
+    model: claude-haiku-5-5
+    use: Validators, triage, summaries

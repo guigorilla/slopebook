@@ -4,7 +4,7 @@ description: >
   cases, and unstated assumptions. Deliberately adversarial.
   High-signal findings only.
 
-model: claude-sonnet-4-5
+model_class: standard
 temperature: 0.5
 
 system_prompt: |

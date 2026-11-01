@@ -22,10 +22,10 @@ The pipeline must:
 |---|---|
 | `pipeline-generate` and `pipeline-review`, covering design docs only | Nothing covers planning, code, tests, infrastructure, release or operations |
 | Design artifacts move from `drafts/` to `design-docs/` | No link from a design artifact to a code change |
-| `uc-validator` gate | **`promote.sh` ignores READY/HOLD** and copies every draft it finds, so the synthesis gate is advisory |
+| `uc-validator` gate; `promote.sh` enforces READY/HOLD | Run 9 promoted `api-design.md` while it was on HOLD, so its CR-001, CR-003 and OQ-066 blockers are in the promoted spec |
 | Agent specs in YAML | No runner in the repo; `trigger: manual` means a person starts each run |
-| `agents/original/` and `agents/second/` | Superseded specs that remain in the live folder |
-| Specs pinned to `claude-opus-4-5` | Model is repeated in every file with no central policy |
+| Superseded specs in `agents/archive/` | None |
+| Specs name a class from `agents/policy.yaml` | No runner reads the policy yet |
 | Turborepo with `build`, `lint`, `typecheck` | No `test` task, no CI, no `.github/`, no infrastructure code |
 | Monorepo apps | `apps/api` has no code; the other apps are scaffolds |
 
@@ -295,8 +295,8 @@ release-policy.yaml         tier path rules, freeze windows and flags
 
 | Class | Use | Model |
 |---|---|---|
-| `deep` | Design, code review, security, complex implementation | `claude-opus-5-5` |
-| `standard` | Implementation, tests, planning | `claude-sonnet-5-5` |
+| `deep` | Orchestration, code review, security, complex implementation | `claude-opus-5-5` |
+| `standard` | Design documents, implementation, tests, planning | `claude-sonnet-5-5` |
 | `fast` | Validators, triage, summaries | `claude-haiku-5-5` |
 
 Specs name a class, not a model. Changing a class's model is a Tier 3 change that requires an eval run.

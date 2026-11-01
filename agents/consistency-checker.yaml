@@ -3,7 +3,7 @@ description: >
   Final review agent. Finds contradictions, misalignments, and terminology
   drift across all design docs and drafts. Reports only — does not fix.
 
-model: claude-sonnet-4-5
+model_class: standard
 temperature: 0.2
 
 system_prompt: |

@@ -3,7 +3,7 @@ description: >
   Maps P0 use cases to concrete technical requirements. Cross-references
   data model and API design to identify gaps. P0 only.
 
-model: claude-sonnet-4-5
+model_class: standard
 temperature: 0.3
 
 system_prompt: |

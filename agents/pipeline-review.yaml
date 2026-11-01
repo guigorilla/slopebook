@@ -5,7 +5,7 @@ description: >
   Now reads decisions.md and api-design-proposed.md.
   Typical runtime: 15-25 minutes.
 
-model: claude-opus-4-5
+model_class: deep
 temperature: 0.3
 
 system_prompt: |

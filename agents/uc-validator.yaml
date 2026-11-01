@@ -5,7 +5,7 @@ description: >
   Blocks the pipeline with a FAIL if any P0 item is missing.
   Fast and narrow — this agent does one thing only.
 
-model: claude-sonnet-4-5
+model_class: fast
 temperature: 0.1
 
 system_prompt: |

@@ -3,7 +3,7 @@ description: >
   Reads the current Slopebook design documents and produces a structured
   set of use cases split by priority. P0 and P1 in separate files.
 
-model: claude-sonnet-4-5
+model_class: standard
 temperature: 0.4
 
 system_prompt: |

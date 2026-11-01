@@ -3,7 +3,7 @@ description: >
   Keeps open-questions.md accurate. Closes implicitly resolved questions,
   adds new ones, flags stale blockers. Lean output.
 
-model: claude-sonnet-4-5
+model_class: standard
 temperature: 0.3
 
 system_prompt: |

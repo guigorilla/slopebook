@@ -3,7 +3,7 @@ description: >
   Keeps the data model accurate and complete. Schema blocks only.
   Reads use cases, tech requirements, and critique.
 
-model: claude-sonnet-4-5
+model_class: standard
 temperature: 0.2
 
 system_prompt: |
