@@ -12,6 +12,45 @@ Format:
 - **[Topic]:** [Decision]. [Reason if relevant.]
 
 ---
+## 2026-10-31
+
+- **Product merge:** Slopebook and SkiMatch merge into one product named
+  Slopebook. SkiMatch is the customer booking and matching module. The Ski
+  School Manager prototype becomes the Manager Console. `overview.md` is the
+  single product definition.
+
+- **Overlay-first:** Slopebook launches as an intelligence layer above a
+  school's existing POS. This supersedes the v1.0 non-goal on POS integration
+  and the previous Alpha, Beta and GA roadmap. Booking Core specs are retained
+  and move to Phase 3.
+
+- **Adapter boundary:** All operating logic goes through `POSAdapter`. Booking
+  Core is one implementation of that interface. Third-party POS systems own
+  transactional records in overlay deployments.
+
+- **Matching timing:** Rules-based, explainable instructor matching moves from
+  v2.0 into the core product. The earlier deferral assumed trained models.
+
+- **Merged domain direction:** Slopebook's data model is the base, extended by
+  SkiMatch concepts as listed in `overview.md`. Skill levels become SkiMatch's
+  six-level scale with a recorded source. Group lessons support both
+  customer-selected sessions and school-composed placement per lesson type.
+  Rating and tip remain, joined by student and instructor assessments.
+
+- **Manager approval:** Agents explain and recommend only. Schedule and other
+  material changes require manager approval, and adapter writes are verified.
+
+- **AI data privacy:** No real customer conversation, inferred profile or
+  instructor observation data enters the system until retention and erasure
+  rules cover it. Those rules must address minors explicitly.
+
+- **Platform fee:** The 1.5% fee applies to Booking Core transactions only.
+  Overlay pricing is unset until the shadow pilot.
+
+- **Agent pipeline:** The design-only pipeline expands to cover product through
+  operations, as defined in `agent-pipeline.md`. Status is Proposed until its
+  open questions are resolved.
+
 ## 2026-04-04
 
 - **Tips:** Tips are in scope for v1.0 as an optional post-lesson flow.

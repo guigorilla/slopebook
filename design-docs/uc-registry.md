@@ -22,7 +22,41 @@ Status values:
 
 ---
 
+## Overlay Scope (Phases 1–2)
+
+Added 2026-10-31. Takes delivery priority over the sections below, which
+describe Booking Core (Phase 3). See `overview.md`.
+
+### Phase 1 — Shadow Pilot
+- [ ] Import a school's daily schedule and roster into the operating model (read-only)
+- [ ] Reject or flag an import with invalid or incomplete records
+- [ ] View today's issues ranked by what needs attention
+- [ ] Review a resolution plan with reasoning, impact and constraint results
+- [ ] Ask the manager agent questions about current operations
+- [ ] Record whether a recommendation matched what the manager actually did
+
+### Phase 2 — Live Overlay
+- [ ] Sign in to a tenant-scoped Manager Console
+- [ ] Approve or reject a resolution plan
+- [ ] Execute an approved plan through the adapter and verify the result
+- [ ] View the decision and action audit history
+- [ ] Rank a waitlist by slot, ability, goals and instructor fit
+- [ ] Offer a waitlist slot without creating a confirmed reservation
+- [ ] Complete a conversational booking intake with original wording preserved
+- [ ] See instructor matches with fit reasons and potential mismatches
+- [ ] Submit a school-composed group placement request
+- [ ] Link a SkiMatch intake to a POS reservation
+- [ ] Student completes a post-lesson interview
+- [ ] Instructor completes a post-lesson interview
+- [ ] View a next-lesson recommendation
+- [ ] Export or erase a learner's profile and conversation data
+- [ ] Parent or guardian consents before a minor's data is collected
+
+---
+
 ## P0 — Alpha Scope (Q2 2026)
+
+Now Booking Core, Phase 3. The heading date is retained for history.
 
 ### Discovery & Availability
 - [x] Browse available lesson slots by age and skill level
@@ -151,7 +185,7 @@ Status values:
 ## Deferred
 
 - [>] Native iOS instructor app — v2.0
-- [>] AI instructor matching — v2.0
+- [>] AI instructor matching — v2.0. Rules-based matching moved to overlay scope 2026-10-31; trained models remain deferred
 - [>] Dynamic pricing — v2.0
 - [>] Additional languages beyond EN/FR — v2.0
 - [>] Additional currencies beyond USD/CAD — v1.5
