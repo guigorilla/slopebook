@@ -1,221 +1,431 @@
 # Slopebook — Use Cases P1 / P2
 
 **Document Status:** Draft — Generate Pipeline Run 10
-**Last Updated:** 2026-04-04
+**Last Updated:** 2026-11-01
 **Pipeline:** pipeline-generate.yaml
-**Sources:** overview.md, ux-flows.md, uc-registry.md, decisions.md
+**Sources:** overview.md (2026-10-31), ux-flows.md, open-questions.md, uc-registry.md, decisions.md
+
+**Scope notes**
+- All items here belong to Booking Core (Phase 3) or later. Overlay Scope (Phases 1-2) items are P0 and live in the P0 file. The old Beta (Q3 2026) and GA (Q4 2026) dates no longer apply; P1/P2 labels follow the registry sections.
+- In overlay deployments the third-party POS owns transactional records, so these flows do not apply there. The 1.5% platform fee applies to Booking Core only.
+- Run 9 IDs are unchanged. New IDs from splitting multi-goal cases: UC-059 to UC-069.
 
 ---
 
-## P1 — Beta Scope (Q3 2026)
+# P1
 
----
-
-## UC-024 — Purchase lesson package
-
+## UC-024 — Purchase a lesson package
 **Persona:** Head of Household
-**Goal:** Buy a multi-lesson package at a discounted rate for a household learner
+**Goal:** Buy a multi-lesson package at a discounted rate for a learner.
 **Preconditions:**
-- Household authenticated; lesson packages enabled for tenant
+- Signed in; packages enabled for the tenant
+
 **Main Flow:**
-1. Student selects lesson package from catalog (GET /api/v1/lesson-packages — P1 endpoint)
-2. System displays package details: totalCount, priceAmountCents, currency, expiresAt
-3. Student selects learner and payment method; confirms purchase
-4. Payment Service captures charge (Payment.paymentType = package_purchase; Payment.lessonPackageId set)
-5. LessonPackage created with remainingCount = totalCount; 1.5% platform fee applied (OQ-027)
+1. Student picks a package (lesson count, price, expiry)
+2. Student selects learner and card
+3. System captures the charge as a package purchase with the 1.5% fee (OQ-027)
+4. System creates the package with remaining credits = total
+
 **Alternate Flows:**
-- Package expires with unused credits: credits forfeited; admin can extend expiresAt manually (OQ-025)
-- Package-redeemed booking cancelled: within window reinstates credit; outside window forfeits credit (OQ-039)
+- Unused credits at expiry are forfeited; admin can extend expiry (OQ-025)
+
 **Postconditions:**
-- LessonPackage created; Payment.paymentType = package_purchase
+- Package created; payment recorded against the package, not a booking
+
 **Priority:** P1
+
+---
+
+## UC-068 — Track package usage per learner
+**Persona:** Head of Household
+**Goal:** See how many package lessons each learner has used and has left.
+**Preconditions:**
+- At least one package exists for the household
+
+**Main Flow:**
+1. User opens packages in the account dashboard
+2. System shows remaining credits, expiry and redemptions per learner sub-profile
+
+**Alternate Flows:**
+- Cancelled redeemed booking: inside window the credit is reinstated, outside it is forfeited (OQ-039)
+
+**Postconditions:**
+- Read-only
+
+**Priority:** P1
+**Open Questions:** Whether a package belongs to one learner or can be shared across the household is not stated.
 
 ---
 
 ## UC-025 — Apply package credit at checkout
-
 **Persona:** Head of Household
-**Goal:** Redeem a lesson package credit when booking a lesson for the eligible learner
+**Goal:** Pay for a lesson with a package credit.
 **Preconditions:**
-- LessonPackage.remainingCount > 0; not expired; lessonTypeId matches package
+- Eligible package with credits left, not expired, matching lesson type
+
 **Main Flow:**
-1. At checkout, system detects eligible package; offers redemption option
-2. Student selects "Use Package Credit"
-3. On booking confirmation: PackageRedemption created; LessonPackage.remainingCount decremented by 1
-4. No Payment charge for booking (covered by package)
+1. System detects the eligible package at checkout
+2. Student chooses "Use package credit"
+3. System records a redemption and decrements credits; no card charge
+
 **Alternate Flows:**
-- No eligible package: standard payment flow proceeds
+- No eligible package: standard payment flow
+
 **Postconditions:**
-- PackageRedemption created; LessonPackage.remainingCount updated
+- Redemption stored; remaining credits updated
+
 **Priority:** P1
 
 ---
 
-## UC-026 — Book group lesson
-
+## UC-026 — Book a group lesson for multiple learners
 **Persona:** Head of Household
-**Goal:** Book a group lesson for one or more learners with per-learner skill level selection
+**Goal:** Book several learners into a customer-selected group session in one transaction, each with their own skill level.
 **Preconditions:**
-- GroupSession exists with available capacity; learners meet skill level requirements
+- Group session with capacity (customer-selected mode)
+
 **Main Flow:**
-1. Student selects group lesson from availability results
-2. Student selects learner(s) and confirms per-learner skillLevel
-3. For each learner: system creates Booking linked to GroupSession; GroupSession.currentCapacity incremented
-4. Payment captured per learner
+1. Student selects the group lesson
+2. Student selects learners and sets each learner's skill level
+3. System creates a booking per learner and updates session capacity
+4. System captures one payment covering the learners
+
 **Alternate Flows:**
-- Group session full: student offered waitlist
-- One learner's payment fails: other learners' bookings not affected
+- Session full: waitlist offered
+- Skill level outside the session range: learner blocked or moved to another session
+
 **Postconditions:**
-- Booking created per learner; GroupSession.currentCapacity updated
+- One booking per learner; capacity updated
+
 **Priority:** P1
+**Open Questions:** Registry says "one transaction" but Run 9 captured payment per learner with independent failure; which applies?
 
 ---
 
-## UC-027 — Group lesson roster management
-
+## UC-027 — Group lesson roster and per-student check-in
 **Persona:** Instructor / School Admin
-**Goal:** Manage the roster for a group lesson and check in students individually
+**Goal:** Manage a group roster and check in each student individually.
 **Preconditions:**
-- GroupSession exists; instructor assigned
+- Group session exists; instructor assigned
+
 **Main Flow:**
-1. Instructor views GroupSession roster (all Bookings linked to groupSessionId)
-2. Instructor checks in each student individually (PATCH /api/v1/bookings/:id/checkin per learner)
-3. Instructor marks session complete (PATCH /api/v1/bookings/:id/complete for each booking or group-level complete)
+1. Instructor views the roster
+2. Instructor checks in each student
+3. Instructor marks the session complete
+
 **Alternate Flows:**
-- Student no-show: PATCH /api/v1/bookings/:id/no-show for that learner only
-- Admin cancels group session: cascade cancel all enrolled bookings; full refunds (OQ-051)
+- No-show recorded for one learner only
+- Admin cancels the session: all bookings cancel with full refunds (OQ-051)
+
 **Postconditions:**
-- All bookings updated; GroupSession.status = completed
+- All bookings updated; session completed
+
 **Priority:** P1
 
 ---
 
-## UC-028 — Instructor views earnings
-
+## UC-028 — Instructor views earnings summary
 **Persona:** Instructor
-**Goal:** View daily, weekly, and seasonal earnings summary with breakdown by lesson type
+**Goal:** See daily, weekly and seasonal earnings.
 **Preconditions:**
-- Instructor authenticated; at least one completed booking exists
+- Instructor signed in; completed bookings exist
+
 **Main Flow:**
-1. Instructor opens Earnings Dashboard; system calls GET /api/v1/instructors/:id/earnings
-2. System returns earnings summary: total by period, breakdown by lesson type
-3. Instructor views seasonal totals and upcoming Workday handoff date
+1. Instructor opens the earnings dashboard
+2. System shows totals by day, week and season
+
 **Alternate Flows:**
-- Admin triggers Workday handoff: POST /api/v1/instructors/:id/workday-handoff (school_admin only)
+- Admin triggers the Workday handoff (report-only payroll)
+
 **Postconditions:**
-- No state change; read-only summary
+- Read-only
+
 **Priority:** P1
 
 ---
 
-## UC-029 — Admin revenue and utilization reporting
+## UC-065 — Instructor views earnings by lesson type
+**Persona:** Instructor
+**Goal:** See earnings broken down by lesson type.
+**Preconditions:**
+- Completed bookings exist
 
+**Main Flow:**
+1. Instructor selects a period
+2. System shows earnings per lesson type
+
+**Postconditions:**
+- Read-only
+
+**Priority:** P1
+
+---
+
+## UC-029 — Admin revenue report
 **Persona:** School Admin
-**Goal:** View revenue by instructor/lesson type/period and instructor utilization rates; export to CSV
+**Goal:** See revenue by instructor, lesson type, period and currency.
 **Preconditions:**
-- Admin authenticated with school_admin role; completed bookings exist
+- Completed bookings exist
+
 **Main Flow:**
-1. Admin opens Reports; selects Revenue or Utilization report type
-2. Admin sets date range and optional instructor/lesson type filters
-3. System returns report (GET /api/v1/reports/revenue or /utilization)
-4. Admin exports to CSV: GET /api/v1/reports/export?type=revenue|utilization&from=&to=
-**Alternate Flows:**
-- Student analytics view: GET /api/v1/reports/students for repeat rate and avg spend
+1. Admin picks a date range and filters
+2. System shows the revenue report
+
 **Postconditions:**
-- No state change; report displayed and optionally downloaded
+- Read-only
+
 **Priority:** P1
 
 ---
 
-## UC-030 — Operator configures resort portal
+## UC-066 — Instructor utilization report
+**Persona:** School Admin
+**Goal:** See how much of each instructor's availability is booked.
+**Preconditions:**
+- Availability and bookings exist
 
+**Main Flow:**
+1. Admin picks a period
+2. System shows utilization rate per instructor
+
+**Postconditions:**
+- Read-only
+
+**Priority:** P1
+
+---
+
+## UC-067 — Export a report to CSV
+**Persona:** School Admin
+**Goal:** Download any report as CSV.
+**Preconditions:**
+- A report is displayed
+
+**Main Flow:**
+1. Admin selects export
+2. System generates a CSV for the current filters
+
+**Postconditions:**
+- CSV downloaded
+
+**Priority:** P1
+
+---
+
+## UC-030 — Configure the white-label booking widget
 **Persona:** Resort Operator
-**Goal:** Configure white-label booking widget, currency, language defaults, and payment processor for a resort
+**Goal:** Set the widget's domain, logo and colors and get the embed code.
 **Preconditions:**
-- Operator authenticated with operator role; resort tenant created
+- Operator signed in; resort tenant exists
+
 **Main Flow:**
-1. Operator opens Operator Portal; selects resort school
-2. Operator configures white-label: custom domain, logo, colors (WhiteLabelConfig)
-3. Operator sets currency (USD or CAD) and defaultLanguage (EN or FR)
-4. Operator selects payment processor and enters encrypted credentials
-5. Operator copies booking widget embed snippet
-**Alternate Flows:**
-- Processor switch mid-season: in-flight transactions resolved manually (OQ-035)
-- Starter tier: Stripe only; Shift4 option not shown (OQ-005)
+1. Operator sets custom domain, logo and colors
+2. System shows the embed snippet
+
 **Postconditions:**
-- Tenant configuration updated; booking widget reflects new branding
+- Widget uses the new branding
+
+**Priority:** P1
+**Open Questions:** Registry lists the Operator Portal as P1, but overview.md places it in Phase 4 (Scale); which sequencing governs?
+
+---
+
+## UC-059 — Set resort-wide currency and language defaults
+**Persona:** Resort Operator
+**Goal:** Set the resort's currency (USD or CAD) and default language (EN or FR).
+**Preconditions:**
+- Operator signed in
+
+**Main Flow:**
+1. Operator selects currency and default language
+2. System applies them to widget and communications
+
+**Alternate Flows:**
+- Changing currency after bookings exist is blocked (single currency per tenant)
+
+**Postconditions:**
+- Defaults saved
+
 **Priority:** P1
 
 ---
 
-## UC-031 — Book recurring weekly lesson
+## UC-060 — Configure payment processor and credentials
+**Persona:** Resort Operator
+**Goal:** Choose Stripe or Shift4 and store credentials securely.
+**Preconditions:**
+- Operator signed in; Shift4 needs Growth tier or above
 
+**Main Flow:**
+1. Operator selects the processor
+2. Operator enters credentials; system encrypts them and never shows them again
+
+**Alternate Flows:**
+- Switching mid-season: in-flight transactions resolved manually (OQ-035); stored cards become invalid
+
+**Postconditions:**
+- Processor active
+
+**Priority:** P1
+
+---
+
+## UC-061 — View consolidated revenue across schools
+**Persona:** Resort Operator
+**Goal:** See revenue across all the resort's schools.
+**Preconditions:**
+- Operator signed in; multiple schools exist
+
+**Main Flow:**
+1. Operator opens consolidated revenue
+2. System shows revenue per school in the resort currency
+
+**Postconditions:**
+- Read-only
+
+**Priority:** P1
+
+---
+
+## UC-031 — Book a recurring weekly lesson
 **Persona:** Head of Household
-**Goal:** Book a recurring weekly lesson for a multi-week program without rebooking each week manually
+**Goal:** Book a weekly lesson for a multi-week program in one step.
 **Preconditions:**
-- Instructor has recurring availability configured (UC-023); lesson type supports recurrence
+- Instructor has recurring availability; lesson type supports recurrence
+
 **Main Flow:**
-1. Student selects recurrence option at checkout: weekly for N weeks
-2. System creates one Booking per occurrence; each linked to a separate SlotReservation
-3. Payment captured per booking or as a single lump charge
-4. Confirmation sent with all occurrence dates
+1. Student chooses weekly for N weeks at checkout
+2. System creates a booking per week
+3. System captures payment and sends one confirmation listing all dates
+
 **Alternate Flows:**
-- Cancel individual occurrence: PATCH /api/v1/bookings/:id/cancel for that booking only; series not affected
-- Instructor unavailable on one week: that occurrence not created; student notified
+- Instructor unavailable one week: that occurrence is skipped and the student told
+
 **Postconditions:**
-- N Bookings created (one per week); confirmations sent
+- N bookings created
+
+**Priority:** P1
+**Open Questions:** Payment per occurrence or one lump charge is not decided.
+
+---
+
+## UC-069 — Cancel one occurrence of a recurring series
+**Persona:** Head of Household
+**Goal:** Cancel one week without affecting the rest.
+**Preconditions:**
+- Series of bookings exists
+
+**Main Flow:**
+1. User cancels one occurrence
+2. System applies the cancellation policy to that booking only
+
+**Postconditions:**
+- One booking cancelled; others unchanged
+
 **Priority:** P1
 
 ---
 
-## P2 — v1.0 GA Scope (Q4 2026)
+# P2
 
----
-
-## UC-032 — Operator views aggregated analytics
-
+## UC-032 — Operator views aggregated dashboards
 **Persona:** Resort Operator
-**Goal:** View consolidated revenue and utilization dashboards across all schools in the resort
+**Goal:** See revenue and utilization dashboards across all schools.
 **Preconditions:**
-- Operator authenticated; multiple schools exist under tenant
+- Multiple schools under the operator
+
 **Main Flow:**
-1. Operator opens Multi-School Dashboard
-2. System returns aggregated revenue and utilization across all schools
-3. Operator exports consolidated financial report (GET /api/v1/reports/export with multi-school scope)
+1. Operator opens the multi-school dashboard
+2. System shows aggregated metrics
+
 **Postconditions:**
-- No state change; read-only dashboard
+- Read-only
+
 **Priority:** P2
 
 ---
 
-## UC-033 — Integrations: webhooks and Google Calendar
-
-**Persona:** Resort Operator / Instructor
-**Goal:** Connect Slopebook to external systems via webhooks (PMS, CRM, marketing) and sync instructor schedule to Google Calendar
+## UC-062 — Export consolidated financial report
+**Persona:** Resort Operator
+**Goal:** Export a consolidated report with a multi-currency summary.
 **Preconditions:**
-- Operator authenticated (webhooks); Instructor authenticated (Google Calendar)
-**Main Flow (Webhooks):**
-1. Operator configures webhook: URL, events, signingSecret (Webhook entity)
-2. System delivers events to webhook URL on each trigger
-**Main Flow (Google Calendar):**
-1. Instructor connects Google account via OAuth (OAuthToken entity — deferred to v1.5 per OQ-021)
-2. System syncs confirmed bookings to instructor's Google Calendar
+- Multiple schools; operator signed in
+
+**Main Flow:**
+1. Operator selects period and base currency
+2. System generates the report for download
+
 **Postconditions:**
-- Webhook registered and active; Calendar synced
+- Report downloaded
+
+**Priority:** P2
+**Open Questions:** Tenants are single-currency with no FX conversion; how a "multi-currency summary" is produced is undefined.
+
+---
+
+## UC-033 — Configure webhooks for PMS, CRM and marketing tools
+**Persona:** Resort Operator
+**Goal:** Send Slopebook events to external systems.
+**Preconditions:**
+- Operator signed in
+
+**Main Flow:**
+1. Operator adds a webhook URL, events and signing secret
+2. System delivers signed events on each trigger
+
+**Postconditions:**
+- Webhook active
+
 **Priority:** P2
 
 ---
 
-## UC-034 — Admin views student analytics
+## UC-063 — Sync instructor schedule to Google Calendar
+**Persona:** Instructor
+**Goal:** See confirmed lessons in my Google Calendar.
+**Preconditions:**
+- Instructor signed in
 
+**Main Flow:**
+1. Instructor connects a Google account
+2. System syncs confirmed bookings
+
+**Postconditions:**
+- Calendar synced
+
+**Priority:** P2
+**Open Questions:** Decisions deferred Google Calendar sync to v1.5 (OQ-021) while the registry lists it P2; confirm timing.
+
+---
+
+## UC-034 — Repeat booking rate report
 **Persona:** School Admin
-**Goal:** Review repeat booking rate and average spend per student to identify high-value customers
+**Goal:** See how many students book again.
 **Preconditions:**
-- Admin authenticated; sufficient booking history exists
+- Sufficient booking history
+
 **Main Flow:**
-1. Admin opens Student Analytics report (GET /api/v1/reports/students)
-2. System returns repeat rate and average spend metrics
-3. Admin exports: GET /api/v1/reports/export?type=students
+1. Admin opens student analytics
+2. System shows repeat booking rate
+
 **Postconditions:**
-- No state change; read-only
+- Read-only
+
+**Priority:** P2
+
+---
+
+## UC-064 — Average spend per student report
+**Persona:** School Admin
+**Goal:** See average spend per student.
+**Preconditions:**
+- Sufficient booking history
+
+**Main Flow:**
+1. Admin opens student analytics
+2. System shows average spend per student
+
+**Postconditions:**
+- Read-only
+
 **Priority:** P2

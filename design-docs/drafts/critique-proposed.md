@@ -1,79 +1,91 @@
 # Slopebook — Design Critique
 
 **Prepared by:** Critic Agent
-**Pipeline Run:** Run 9 (2026-04-04)
-**Documents Reviewed:** overview.md, data-model.md (v0.5), data-model-proposed.md (v0.6), api-design-proposed.md (Run 8, post CR-004 fix), ux-flows.md, open-questions.md / open-questions-proposed.md (Run 8), decisions.md, uc-registry.md, use-cases-p0-proposed.md (Run 8), tech-requirements-proposed.md (Run 8), asset-list-proposed.md (Run 8)
+**Pipeline Run:** Run 10 (2026-11-01)
+**Documents Reviewed:** overview.md, decisions.md (through 2026-11-01), uc-registry.md, open-questions.md, data-model.md (v0.7), api-design.md, ux-flows.md, use-cases-p0-proposed.md (rev 2), use-cases-p1-proposed.md, tech-requirements-proposed.md, asset-list-proposed.md, api-design-proposed.md, uc-validation-proposed.md
+**Method:** Judged fresh against decisions.md and overview.md. Earlier agents' PASS verdicts (uc-validation, Run 9 critique) were not treated as evidence. Issues are numbered fresh for Run 10; Run 9 numbering is not reused except where a Run 9 item is named.
 
-**Resolved since Run 8:** CR-001, CR-002, CR-003 (all addressed in data-model-proposed.md v0.6); CR-004 (duplicate guestCheckoutId removed); OQ-059 (nullable bookingId confirmed); OQ-061 (tips in scope, OQ-043 superseded).
+## Run 9 Blocker Status (checked in api-design-proposed.md)
 
----
+- **Run 9 CR-001 (booking payload `learnerId` non-nullable): PARTLY FIXED.** `learnerId` and `paymentMethodId` are now `uuid | null` in the booking payload, with the exactly-one-of rule stated. The guest path is still not implementable: the payload has no field that carries the guest's processor token or payment intent, so the server cannot know what to charge when `paymentMethodId` is null. The same non-nullable defect remains in the tip payload (`paymentMethodId: uuid`). See CR-004 and CR-006.
+- **Run 9 CR-003 (tip status guard and time window): FIXED.** Status must be `completed` (`BOOKING_NOT_COMPLETED`), 48 hours after `Booking.endAt` (`TIP_WINDOW_EXPIRED`), ordered checks, mirrored in UC-058, TR-008, error list and asset list. One residual defect in the uniqueness rule is logged as CR-007.
+- **Run 9 OQ-066 (reassign payload): FIXED in the API draft, stale elsewhere.** Request `{ instructorId, reason }`, a Booking response, conflict behavior and the audit entry are specified. `notifyStudent` and eligible statuses moved to Q10.54/Q10.55, which is acceptable. UC-014 and TR-015 still list OQ-066 as unresolved, and open-questions.md still has it active; close it there.
 
 ## Critical Issues
 
-### CR-001 — Booking payload: `learnerId` marked non-nullable despite guest checkout path
+### CR-001 — Privacy gate does not cover real POS customer data imported in Phase 1
 **Severity:** Critical
-**Source:** api-design-proposed.md — Booking Engine, booking request payload JSON
-**UC:** UC-003 (guest checkout), UC-004 (authenticated)
-**Problem:** The booking request payload shows `"learnerId": "uuid"` (non-nullable). For the guest checkout path (UC-003), `learnerId` is null and `guestCheckoutId` is set — the server-side rule enforces exactly one of the two must be non-null. Any client reading this spec will treat `learnerId` as required and reject the guest checkout path at client-side validation. This will break all guest bookings at integration time.
-**Fix:** Change to `"learnerId": "uuid | null"` and `"paymentMethodId": "uuid | null"` in the booking payload JSON (guest checkout uses processor SDK for payment, not a stored PaymentMethod).
+**Source:** api-design-proposed.md — Overlay Privacy Gate, Schedule Import; tech-requirements-proposed.md TR-030 (Q10.2), TR-035; decisions.md 2026-10-31 (AI data privacy); overview.md Privacy and AI Boundaries
+**UC:** UC-035, UC-039, UC-054
+**Problem:** The gated list is conversations, inferred profiles, observations, interviews, recommendations. `POST /imports` is not gated, yet the first deliverable loads real names, contact details and minors from the POS (Q10.2 is open). The import also writes a minimal `LearnerProfile`, which TR-047 marks `[GATE]`, so import either fails with `PRIVACY_GATE_CLOSED` or bypasses the gate. Overview says the rules apply "before any real customer data enters"; decisions.md names only three classes, so the two disagree. The agent (UC-039) then retrieves imported minors' records for a model provider while its own writes are gated.
+**Fix:** Decide in decisions.md that imported POS customer data is a gated class (retention, erasure, minors) and gate `POST /imports`, `ImportFlag.sourceRow` previews, `LearnerProfile` and agent retrieval; or constrain the Phase 1 pilot to synthetic or pseudonymised data. Close Q10.2 and Q10.3 first.
 
----
-
-### CR-002 — Tip endpoint has no idempotency or uniqueness constraint
+### CR-002 — Overlay waitlist reuses the Booking Core promote/accept path, which takes payment
 **Severity:** Critical
-**Source:** api-design-proposed.md — Booking Engine, POST /api/v1/bookings/:id/tip; data-model-proposed.md — Payment entity
-**UC:** UC-007
-**Problem:** `POST /api/v1/bookings/:id/tip` has no documented uniqueness constraint. Unlike the review endpoint (one InstructorRating per booking via unique constraint), a student can call the tip endpoint multiple times and generate multiple tip Payment records for the same booking. There is no idempotency key specified for this endpoint and no `(bookingId, paymentType = 'tip')` unique constraint on the Payment table. At $10/tip with a double-tap, this creates duplicate charges the processor may not deduplicate.
-**Fix:** Add a unique partial index on Payment: `(bookingId, paymentType)` WHERE `paymentType = 'tip'`. Add idempotency key support to `POST /api/v1/bookings/:id/tip`. Document one tip per booking.
+**Source:** api-design-proposed.md — Waitlist Ranking & Offers and Booking Engine waitlist endpoints; tech-requirements-proposed.md TR-045, TR-046, TR-009; use-cases-p0-proposed.md UC-008, UC-016, UC-045
+**UC:** UC-045, UC-046, UC-008, UC-016
+**Problem:** TR-045 and the API orders overlay manual ranking through the existing `PATCH /waitlist/:id/promote`. That endpoint (UC-016) sends a 2-hour notification whose accept (`POST /waitlist/:id/accept`) creates a SlotReservation and routes to checkout, payment and confirmation. The overlay rule is that an offer never confirms or takes payment, and overlay tenants cannot call Booking Engine endpoints (api-design principles, Q10.57). Either overlay manual order is unusable or an implementer reuses the paying path. "Waitlist offer" also names two different things (system notification vs manager-approved offer), and the registry says accept "triggers payment and confirmation".
+**Fix:** Give overlay its own reorder action (not `/promote`), state that `/waitlist/:id/accept` and `/promote` are Booking Core only and return the Q10.57 error for overlay tenants, and rename the Booking Core step "waitlist notification" so the no-payment rule is unambiguous.
 
----
-
-### CR-003 — Tip endpoint: no time-window or booking-status guard documented
+### CR-003 — Phase 2 consent, export and erasure depend on Phase 3 accounts, so the privacy gate cannot open
 **Severity:** Critical
-**Source:** api-design-proposed.md — POST /api/v1/bookings/:id/tip; use-cases-p0-proposed.md UC-007
-**UC:** UC-007
-**Problem:** The tip endpoint has no documented guard that: (a) the booking is in `completed` status before a tip can be submitted, and (b) the endpoint cannot be called on a `cancelled` or `no_show` booking. Without a status check, a student who cancels a booking could still submit a tip payment for it. More critically, the endpoint is callable indefinitely after completion — there is no time window (e.g. 7 days) beyond which tips are no longer accepted. This leaves an unbound liability for chargebacks.
-**Fix:** Document server-side enforcement: `Booking.status = completed` required; add a configurable or fixed tip acceptance window (suggest: 7 days after `Booking.endAt`). Add to api-design-proposed.md endpoint description.
+**Source:** api-design-proposed.md — Privacy Requests & Consent, Intake; tech-requirements-proposed.md TR-054, TR-055, TR-047 (Q10.32); asset-list-proposed.md UI-16; data-model.md Learner/Household
+**UC:** UC-054, UC-055, UC-047, UC-053
+**Problem:** Consent, export and erasure are authenticated as the "verified head of household" with the adult "taken from the JWT" and are keyed by `learnerId`, which requires a Household and User (Booking Core, Phase 3). Overlay guests use intake or interview tokens only and have no JWT. An intake token is not bound to a learner (Q10.32), so `403 CONSENT_REQUIRED` cannot be enforced; the only link is a client-supplied `consentRef` string. These endpoints must exist before the gate opens, so Phase 2 is blocked, and minors' data protection rests on an unverifiable client value.
+**Fix:** Define how an overlay adult is identified and verified (for example a verified-email token bound to a learner subject created at intake start), bind each intake to a learner subject before any message is accepted, and make ConsentRecord and PrivacyRequest keyed to that subject rather than to Household.
 
----
+### CR-004 — Guest-checkout booking and tip payloads have no field carrying the card token or payment intent
+**Severity:** Critical
+**Source:** api-design-proposed.md — Booking Engine, booking request payload and tip payload; use-cases-p0-proposed.md UC-003 steps 4-6; tech-requirements-proposed.md TR-003
+**UC:** UC-003, UC-058
+**Problem:** UC-003 captures the card "via the processor SDK" and sends `paymentMethodId = null`. The booking payload contains no `processorToken`, payment intent or equivalent, so the server cannot charge the guest's card. Run 9 CR-001 was closed on nullability only; the primary conversion path is still unbuildable. The tip payload is worse: `paymentMethodId` is required and non-null.
+**Fix:** Add an explicit payment input to `POST /bookings` and `POST /bookings/:id/tip` (for example `paymentToken` XOR `paymentMethodId`), define the processor-side confirmation and the 3-D Secure round trip, and state which of the two is required per path.
 
 ## Significant Gaps
 
-- **api-design-proposed.md** — OQ-063 (real-time push mechanism for admin schedule view) placed a tip-resolution decision inside the OQ-063 block; the actual push mechanism (SSE / WebSocket / polling) remains undecided and unspecified; TR-014 cannot be implemented until this is resolved
-- **api-design-proposed.md — POST /api/v1/users** — no response payload documented; admin walk-up flow (UC-021, TR-021) creates User + Household + Learner atomically — implementer has no spec for what the response contains or what IDs to use in the subsequent booking call
-- **api-design-proposed.md — PATCH /api/v1/bookings/:id/reassign** — no request payload documented (OQ-066); at minimum needs `instructorId`; no response payload either; implementer has nothing to work from
-- **api-design-proposed.md Notification Service** — `booking.completed` event description says "one-click rating link" only; now that tips are confirmed in scope, the post-lesson email should prompt for both rating (required) and tip (optional); description needs updating
-- **uc-registry.md** — "Bulk create lessons for group programs" — UC-017 alternate flow covers this in one line; no dedicated API endpoint (`POST /api/v1/lesson-types/bulk` or equivalent) exists in api-design-proposed.md or tech-requirements-proposed.md; cannot be implemented
-- **data-model-proposed.md — Instructor.averageRating** — update strategy relies on "application layer recomputes on InstructorRating insert/update" but no TR or endpoint spec documents this as a side effect of `POST /api/v1/bookings/:id/review`; TR-007 must explicitly list this as an API change side effect
-- **ux-flows.md** — three stale references persist unedited: §3 "Sync with Google Calendar (optional)" (deferred v1.5, OQ-021), §3 "Tips (if applicable)" in Earnings Dashboard (tips now in scope but as a separate post-lesson flow, not as an Earnings Dashboard line item), §3 "optional digital signature" at check-in (Smartwaiver deferred OQ-052); all three will mislead developers reading ux-flows.md
-
----
+- **CR-005 — use-cases-p0-proposed.md UC-057 vs decisions.md 2026-10-31 (Manager approval) and overview.md Execution rule** — the decision's second sentence ("Schedule and other material changes require manager approval") is not grammatically agent-scoped, and overview says "every change to a school's schedule requires manager approval". UC-057 (and UC-001 to UC-006 generally) lets customers change Booking Core records with no approval. This is almost certainly intended, since Booking Core is the system of record and customers are not agents, but nothing in decisions.md says so; UC-057 also has no endpoint (TR-057, Q10.50) and could change instructor assignment, which should stay an admin action. Add a decisions.md line: approval governs agent- and system-originated changes and overlay execution, not customer-initiated Booking Core transactions; limit UC-057 to same-instructor time change with availability re-validation; any instructor change stays admin reassign.
+- **CR-006 — api-design-proposed.md Tip endpoint; use-cases-p0-proposed.md UC-007, UC-058; asset-list-proposed.md Post-Lesson Review** — guest-checkout users, the main path, have no stored card, yet UC-007 and UC-058 promise tipping from the email link with no login and the screen offers a stored-card selector; API marks the path "undecided (open)" while the UCs do not — tip is impossible for most users until CR-004 plus a link-based tokenized payment (new card via processor SDK, no account) is specified; the open item must be carried into UC-058.
+- **CR-007 — data-model.md Payment unique partial index; api-design-proposed.md Tip rule 3-4** — the unique index on `(bookingId, paymentType) WHERE paymentType = 'tip'` also counts a `failed` tip Payment, and a retry with a new Idempotency-Key returns `TIP_ALREADY_SUBMITTED` — a declined card permanently blocks tipping; scope the index to non-failed statuses and define retry after `PAYMENT_FAILED`.
+- **CR-008 — api-design-proposed.md PATCH /admin/tenants/:id/real-data; tech-requirements-proposed.md TR-030** — the switch is rejected unless every gated class has an approved policy, including Phase 2 classes (interviews, minors' consent, recommendations); Phase 1 cannot use real data until Phase 2 retention rules exist — split the gate per data class or per phase, or Phase 1 stays synthetic.
+- **CR-009 — tech-requirements-proposed.md TR-041 (Q10.19); asset-list-proposed.md UI-2; api-design-proposed.md Principles** — Phase 1 Manager Console has no sign-in while the API says every non-public endpoint needs a JWT; a pilot with a real school's schedule and student data behind an unauthenticated console breaks tenant isolation — decide the pilot access mechanism (single-tenant deploy, pilot token) before Phase 1.
+- **CR-010 — api-design-proposed.md Plans & Approval, Execution; tech-requirements-proposed.md TR-032, TR-043 (Q10.6, Q10.7, Q10.24)** — "deterministic rules decide" holds only if rules exist: with no defined policy/constraint set a plan returns `valid: true` and agent-authored `params` pass unchecked; `expectedState` is compared only after the write, and `planHash` covers the last import, not live POS state, so an approved action can overwrite a concurrent POS edit — require a minimum rule set before Phase 2 execution and a pre-write read-compare (compare-and-set) step; add approval expiry.
+- **CR-011 — api-design-proposed.md Waitlist Offers; use-cases-p0-proposed.md UC-046; tech-requirements-proposed.md TR-046 (Q10.27, Q10.28)** — an offer has no delivery channel (Notification Service has no overlay events) so the signed link cannot be sent, and sending an offer to a guest is a school-facing action that is neither a ManagerDecision nor visible in the UC-044 audit — define the channel and record offers in the audit stream.
+- **CR-012 — use-cases-p0-proposed.md UC-035 step 3, UC-054; api-design-proposed.md Imports and Privacy Requests** — import copies POS customers and employees into Learner/Instructor records, though the POS owns them; erasure says POS-owned records are not erased, but the Slopebook copy is erasable and the next re-import ("updates changed records") recreates it — define the erasure tombstone that re-import honours, and which imported fields Slopebook may hold at all.
+- **CR-013 — api-design-proposed.md Principles; tech-requirements-proposed.md TR-001, TR-002, TR-003** — tenant is "resolved from the JWT only", but availability, slot-reservations, guest-checkouts and waitlist join are `[PUBLIC]` with no JWT; there is no widget key, slug or domain rule, so the booking widget cannot resolve a tenant (only webhooks, Q10.51, are acknowledged) — specify public tenant resolution and its abuse limits.
+- **CR-014 — api-design-proposed.md Booking Engine waitlist endpoints; tech-requirements-proposed.md TR-009** — `POST /waitlist` accepts a `guestEmail`-only entry, but accept and DELETE are not `[PUBLIC]` and TR-009 gives them to the `guest` role, so an email-only waitlister cannot accept or leave — add a signed-link auth path for these two calls.
+- **CR-015 — use-cases-p0-proposed.md UC-006 (OQ-033); api-design-proposed.md PATCH /bookings/:id/cancel** — the guest-checkout cancel exclusion exists only in the UC and TR-012; the API states no authorization rule or error code for it, and the booking-reference token that opens review and tip could be read as also opening cancel. If the guest later creates an account and the booking is re-linked (Q10.44) the exclusion disappears, so "create an account to cancel" becomes a bypass; state the error code and decide the re-link rule. OQ-033 itself is not re-litigated.
+- **CR-016 — tech-requirements-proposed.md TR-048 InstructorProfile; data-model.md InstructorTenant; open-questions.md OQ-015** — `InstructorProfile` and `learnedProfile` are keyed by `instructorId` with no `tenantId`, yet an instructor can work for several schools and learned data must stay school-readable only; one school's observations about a shared instructor would be visible to another, against the full tenant-isolation decision — key it by (instructorId, tenantId).
+- **CR-017 — use-cases-p0-proposed.md UC-001, UC-003; api-design-proposed.md availability and guest-checkouts (Q10.42)** — browse collects an integer `age`, GuestCheckout requires `learnerDateOfBirth`, and UC-003 attaches the age "as learnerDateOfBirth"; a date of birth cannot be derived from an age, and the under-18 consent test would run on invented data — browse must collect a date of birth (or the age rule must be redefined).
+- **CR-018 — use-cases-p0-proposed.md UC-056 postcondition, UC-049; api-design-proposed.md Booking Engine** — UC-056 says created sessions are "bookable", but no P0 endpoint books a GroupSession (booking payload has no `groupSessionId`; group booking is UC-026, P1) — either bring group booking into scope or drop "bookable" from UC-056; UC-049 also depends on UC-026.
+- **CR-019 — use-cases-p0-proposed.md UC-021; data-model.md User.passwordHash; tech-requirements-proposed.md TR-017** — "payment via POS card terminal" has no Payment Service path, yet Booking requires a Payment record; the walk-up User is created with no password and password reset is unresolved (OQ-062) — define how an off-platform card payment is recorded and how the customer claims the account.
 
 ## Edge Cases Not Handled
 
-- Instructor last-minute cancellation — **COVERED**: UC-006 alternate flow (OQ-058)
-- Payment capture succeeds but booking write fails — **COVERED**: UC-003 step 8 (OQ-053/056)
-- Waitlist offer expires unaccepted — **COVERED**: UC-029 alternate flow (OQ-034)
-- Resort switches processor mid-season — **COVERED**: UC-025 (P1, OQ-035)
-- Learner sub-profile deleted with active bookings — **COVERED**: 409 LEARNER_HAS_ACTIVE_BOOKINGS (OQ-036)
-- Weather cancellation during peak booking window — **COVERED**: UC-019; CASL transactional (OQ-044)
-- Instructor freelancing across two tenants simultaneously — **COVERED**: OQ-041; no cross-tenant conflict detection v1.0
-- Child waiver not signed at time of booking — **COVERED**: OQ-052; waiverToken = null for P0
-
----
+- Instructor last-minute cancellation — **CR-020**: UC-006 applies the CancellationPolicy to an instructor-initiated cancel, so a student can be refused a refund for the school's own cancellation (OQ-051 covers weather and group cascade only); no rebooking offer; make it a full refund
+- Payment capture succeeds but booking write fails — covered for single bookings (UC-003, OQ-047/053/056). **CR-021**: the charge idempotency key is scoped to `reservationId`, which is nullable and shared by several learners in UC-005, so a second learner's charge would replay the first
+- Waitlist offer expires unaccepted — covered (UC-008, UC-046). **CR-022**: Booking Core sets the entry `accepted` on accept, before payment; if checkout lapses at 15 minutes the entry is accepted with no booking and no retry state
+- Resort switches processor mid-season — **CR-023**: `Tenant.paymentCredentials` is overwritten, so refunds and tips on bookings captured through the old processor ("through the processor that captured the charge") cannot run
+- Learner sub-profile deleted with active bookings — covered by the 409 (OQ-036); **CR-024**: the UC-054 erasure path for a learner with future bookings is not reconciled with that block
+- Weather cancellation during peak booking window — **CR-025**: the bulk-cancel response is counts only although the design promises partial-failure reporting; no list of bookings whose refund failed; no Idempotency-Key
+- Instructor freelancing across two tenants simultaneously — covered by OQ-041 for conflicts; data leakage is CR-016
+- Child waiver not signed at time of booking — covered only by OQ-052 (waiver assumed complete, `waiverToken` null); see Domain Risks
 
 ## Slopebook Domain Risks
 
-- **PCI scope still undefined** (OQ-064, unresolved since Run 7): SAQ type not documented. `processorTokenId` encrypted at rest, but whether the architecture qualifies as SAQ A vs A-EP requires processor compliance team confirmation before building payment infrastructure.
-- **PIPEDA gap for P0 guest PII** (unresolved): UC-026 right-to-erasure is P1. Alpha will accumulate GuestCheckout PII with no production erasure path. Canadian guest erasure requests during Alpha require manual DB intervention.
-- **Seasonal load — no capacity targets**: Rate-limiting thresholds and autoscaling strategy remain unspecified. Opening-day booking spikes at ski resorts are extreme and predictable.
-- **Child safety — client-supplied DOB not server-verified**: `Learner.dateOfBirth` and `GuestCheckout.learnerDateOfBirth` are self-reported with no server-side age verification. False DOB bypasses parental consent requirement silently.
-
----
+- **PCI (OQ-064, still unresolved):** SAQ type undocumented. A link-based guest tip page (CR-006) must stay an embedded processor field to remain SAQ A; any server-side token handling widens scope. POS imports must keep the card-data allow-list (TR-031).
+- **PIPEDA / privacy:** Overlay stores free-text conversations about children, imported POS customer records and instructor observations with no retention rules (Q10.1) and backups and provider logs outside erasure scope (Q10.3). No cross-border processing position for the model provider (Q10.8, Q10.9) and no mention of Quebec requirements for French-speaking Canadian schools. Booking Core GuestCheckout erasure still has no P0 use case while P0 collects guest PII.
+- **Seasonal load:** No capacity or rate targets for the booking surge (public availability, slot-reservation, bulk-cancel of hundreds of refunds) or for model-backed intake and agent calls at opening day.
+- **Child safety:** Date of birth is self-reported and never verified (CR-017); minor consent is a client-supplied `consentRef` (CR-003); two unreconciled consent mechanisms exist (`Learner.parentalConsentGiven` and `ConsentRecord`, TR-055); waiver is assumed complete for P0 with no owner; AI intake extraction can set age or ability as `inferred`, and those values feed hard-constraint matching (UC-048).
 
 ## Minor Issues
 
-- **api-design-proposed.md** — `booking.completed` Notification Service event description should be updated from "one-click rating link" to "rating and optional tip prompt link" now that tips are confirmed in scope
-- **ux-flows.md §3 Earnings Dashboard** — "Tips (if applicable)" is now in scope but as a **post-lesson payment flow** triggered from the customer app, not displayed in the instructor's Earnings Dashboard; the ux-flows.md reference is misleading — instructor sees tip income in earnings but does not submit tips from that screen
-- **open-questions-proposed.md** — OQ-063 block contains a tip resolution decision (status "Resolved") but the OQ-063 question is about the real-time push mechanism, not tips; the block needs cleanup to separate the tip decision (which resolves OQ-061) from the push mechanism question (which remains OQ-063 unresolved)
-- **data-model-proposed.md** — `Payment.paymentType` column does not have a DEFAULT value specified; existing rows at migration time need a backfill strategy (all existing = 'booking_charge'); migration notes in v0.6 do cover this but the schema block itself should show `default 'booking_charge'`
+- **data-model.md / api-design-proposed.md** — Booking Core P0 endpoints already use the six-level skill scale while data-model v0.7 and `LessonType.skillLevels` are three-level and the mapping is undecided (Q10.10); the cutover is applied before it is defined
+- **use-cases-p0-proposed.md UC-014, UC-056; tech-requirements-proposed.md TR-015, TR-056, Gap Analysis 1-3 and 7, Q10.47** — still say OQ-066 is unresolved or that bulk group program and overlay endpoints are absent from api-design; api-design-proposed.md now defines them
+- **uc-registry.md; open-questions.md** — overlay and post-lesson checkboxes are stale; OQ-009 (configurable window) still contradicts decisions.md 2026-03-26; none of Q10.1-Q10.57 is registered, and the header counts are Run 9
+- **api-design-proposed.md Audit** — `GET /audit/decisions/export` collides with `GET /audit/decisions/:id` route matching
+- **api-design-proposed.md Execution** — `ADAPTER_READ_ONLY` is both an error and a path that produces `manual_pending` outcomes; state which HTTP result the caller gets
+- **api-design-proposed.md Tenant Sign-in; Admin tenants** — `POST /auth/login` has two behaviors (JWT with tenant vs pre-tenant session), and `PATCH /admin/tenants/:id/real-data` takes a tenant in the path against the "select-tenant is the only exception" rule
+- **api-design-proposed.md Imports** — dismissing a flag is not defined as keeping or admitting the record, which can contradict UC-036 "no invalid record enters unflagged"
+- **api-design-proposed.md Payment schema** — `platformFeeCents` on tips is not decided (decisions.md 1.5% applies to Booking Core transactions; a gratuity is arguably different)
+- **asset-list-proposed.md Console Pros, Console Students (Phase 1)** — show learned profiles and original wording that only exist after Phase 2 interviews and intake, and are gated data
+- **asset-list-proposed.md; use-cases-p0-proposed.md UC-011** — the no-show "admin alert" has no Notification Service event, template or screen

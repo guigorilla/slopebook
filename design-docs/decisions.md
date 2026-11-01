@@ -12,6 +12,19 @@ Format:
 - **[Topic]:** [Decision]. [Reason if relevant.]
 
 ---
+## 2026-11-01
+
+- **Bulk group program creation:** Booking Core v1.0 includes real bulk
+  creation. An admin defines a group program once and the system creates every
+  session in one request, flagging any week with a conflict and creating the
+  rest. This supersedes the earlier "no dedicated bulk endpoint in v1.0" note.
+
+- **Scope of age and skill collection:** The 2026-03-20 rule (collected at
+  browse, not at checkout) applies to the public browse-to-checkout flow. An
+  admin walk-up booking has no browse stage, so details are collected in the
+  walk-up form. A learner added during household checkout is collected at that
+  step. No flow asks again for details the session already holds.
+
 ## 2026-10-31
 
 - **Product merge:** Slopebook and SkiMatch merge into one product named
