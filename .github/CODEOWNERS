@@ -1,0 +1,10 @@
+# Changes here need human review. See design-docs/agent-pipeline.md, section 12.
+/.github/                @guigorilla
+/agents/                 @guigorilla
+/infra/                  @guigorilla
+/packages/db/prisma/     @guigorilla
+/packages/auth/          @guigorilla
+/design-docs/overview.md     @guigorilla
+/design-docs/ux-flows.md     @guigorilla
+/design-docs/decisions.md    @guigorilla
+/design-docs/uc-registry.md  @guigorilla

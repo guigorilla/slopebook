@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node --watch src/index.ts",
-    "build": "tsc"
+    "dev": "node --watch src/index.ts"
   },
   "dependencies": {
     "hono": "^4.0.0",

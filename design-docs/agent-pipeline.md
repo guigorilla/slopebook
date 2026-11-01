@@ -26,7 +26,7 @@ The pipeline must:
 | Agent specs in YAML | No runner in the repo; `trigger: manual` means a person starts each run |
 | Superseded specs in `agents/archive/` | None |
 | Specs name a class from `agents/policy.yaml` | No runner reads the policy yet |
-| Turborepo with `build`, `lint`, `typecheck` | No `test` task, no CI, no `.github/`, no infrastructure code |
+| Pull request CI: lint, types, tests, build, secret scan, dependency audit | Not yet a merge requirement until branch protection is on; no infrastructure code |
 | Monorepo apps | `apps/api` has no code; the other apps are scaffolds |
 
 ## 3. Principles
